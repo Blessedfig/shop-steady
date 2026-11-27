@@ -1,0 +1,17 @@
+{
+  "appId": "com.theblessedfigtree.shopsteady.test",
+  "appName": "Shop Steady Test",
+  "webDir": "www",
+  "server": {
+    "url": "https://blessedfig.github.io/shop-steady/app/",
+    "allowNavigation": ["blessedfig.github.io", "*.supabase.co"]
+  },
+  "appendUserAgent": "BookstoreApp",
+  "backgroundColor": "#F5F9FC",
+  "android": {
+    "allowMixedContent": false
+  },
+  "ios": {
+    "contentInset": "always"
+  }
+}

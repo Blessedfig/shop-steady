@@ -1,0 +1,4 @@
+isbn,sku,title,author,category,condition,source,on_hand,minimum,sold_last_30_days,unit_cost,price,vendor,lead_time_days,pack_size,consignor_split
+9780000000101,,Sample Novel,A. Author,Fiction,new,stock,2,3,9,10.80,18.00,Distributor A,4,1,
+,CAFE-BEANS-5LB,Coffee beans 5 lb bag,,Café supplies,new,supply,1,2,6,42.00,0,Roaster B,3,1,
+9780000000309,,Local History Sampler,C. Author,Local,new,consign,1,2,3,0,20.00,Consignor 001,0,1,0.60

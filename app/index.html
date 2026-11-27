@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; worker-src 'self' blob:; base-uri 'none'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Shop Steady App</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1D6AA8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Shop Steady">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+
+<div id="gate" class="gate" role="main" hidden>
+  <div class="card">
+    <div class="row"><span class="mark" aria-hidden="true"></span><span class="eyebrow">Shop Steady</span></div>
+    <h1>Sign in</h1>
+    <form id="pwForm" class="grid">
+      <label class="f">Email<input id="email" type="email" autocomplete="username" inputmode="email" required placeholder="you@example.com"></label>
+      <label class="f">Password<input id="password" type="password" autocomplete="current-password" required></label>
+      <button class="btn" type="submit">Sign in</button>
+    </form>
+    <div class="card soft" style="box-shadow:none;gap:.5rem">
+      <b>First time here, or forgot your password?</b>
+      <span class="small">We'll email you a sign-in code. After you're in, you can choose a password.</span>
+      <div class="row"><button class="btn ghost sm" id="sendBtn" type="button">Email me a sign-in code</button></div>
+    </div>
+    <form id="codeForm" class="grid" hidden>
+      <label class="f">Code from the email<input id="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="12" required placeholder="123456"></label>
+      <button class="btn" type="submit">Sign in with the code</button>
+    </form>
+    <p id="gateMsg" class="msg" hidden></p>
+    <p class="small muted">You stay signed in on this device until you sign out or go 12 hours without using it.</p>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <header class="top">
+    <div class="in">
+      <a class="brand" href="#/home"><span class="mark" aria-hidden="true"></span>Shop Steady</a>
+      <label class="switch">View as<select id="tierSel" aria-label="View the app as"></select></label>
+      <label class="switch">Store<select id="siteSel" aria-label="Which store"></select></label>
+      <div class="who"><span id="whoEmail"></span><button class="linkbtn" id="pwChange" type="button">Password</button><button class="linkbtn" id="signOut" type="button">Sign out</button></div>
+    </div>
+  </header>
+  <div class="shell">
+    <nav class="side" id="nav" aria-label="App sections"></nav>
+    <main id="main" tabindex="-1"></main>
+  </div>
+</div>
+
+<script src="vendor/supabase-js-2.118.0.js"></script>
+<script src="config.js"></script>
+<script src="lib/idle.js"></script>
+<script src="lib/pw.js"></script>
+<script src="data.js"></script>
+<script src="shell.js"></script>
+<script src="inventory.js"></script>
+<script src="setup.js"></script>
+<script src="sw-register.js"></script>
+</body>
+</html>
