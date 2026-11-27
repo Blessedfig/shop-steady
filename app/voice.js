@@ -13,7 +13,7 @@
   const CHECKIN = ['How was this week, 1 to 5?','What got in your way?','What would make your job easier?','Anything you want the owner to know?'];
 
   function V(){ const s = S(); s.voice = s.voice || {cust:[], staff:[], checkins:[]};
-    if (!s.voice.seeded){ s.voice.seeded = true; const d = isoDay(new Date()), site = 'main';
+    if (!s.voice.seeded && A.demo){ s.voice.seeded = true; const d = isoDay(new Date()), site = 'main';
       s.voice.cust.push({id:uid(), site, at:addDays(d,-3), kind:'asked', what:'Asked for volume 12 of a manga series (sample)', cat:'Manga', by:'Staff'},
                         {id:uid(), site, at:addDays(d,-2), kind:'passed', what:'Put back a hardcover at $32, said too pricey (sample)', cat:'Fiction', by:'Staff'},
                         {id:uid(), site, at:addDays(d,-1), kind:'asked', what:'Asked for volume 12 again, different customer (sample)', cat:'Manga', by:'Staff'});

@@ -46,7 +46,8 @@
       }},'Download all data (.json)')),
       S().lastExport ? h('p',{class:'small'},'Last downloaded on this device: '+A.fmtTime(S().lastExport)) : h('p',{class:'small'},'Not downloaded on this device yet. Once a month is a good habit.')));
 
-    v.append(h('div',{class:'card'}, h('h2',null,'Sample data'),
+    // Demo only. Signed in, this would replace the shop's shared records (customers, schedule, expenses) for everyone.
+    if (A.demo) v.append(h('div',{class:'card'}, h('h2',null,'Sample data'),
       h('p',{class:'small muted'},'This test version keeps everything in this browser only. Starting over puts the made-up sample data back.'),
       h('div',{class:'row'}, h('button',{class:'btn ghost sm',type:'button',onclick:()=>{
         const keep = {site:S().site};

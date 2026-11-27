@@ -28,6 +28,7 @@
     const site = S().site;
     if (!s.people.vendors[site]){ const list = (A.site().type === 'bookstore' ? BOOK_VENDORS : []).concat(GENERAL_VENDORS);
       s.people.vendors[site] = list.map(v => Object.assign({id:uid(), status:'Applying', contact:'', email:'', phone:'', min:'', notes:''}, v)); }
+    if (!s.people.customers[site] && !A.demo){ s.people.customers[site] = []; }
     if (!s.people.customers[site]){ const d = isoDay(new Date());
       s.people.customers[site] = [
         {id:uid(), n:'Sample Customer A', email:'', phone:'', bday:addDays(d,9).slice(5), likes:'Manga (shonen), fantasy', consent:true, notes:'Prefers a text when orders arrive (sample)', orders:[], since:addDays(d,-200)},
@@ -154,7 +155,7 @@
   const HOLD_DAYS = 30;
   const statusOf = o => o.status === 'Arrived, customer told' ? 'Customer told' : o.status; // older records
   const daysSince = d => d ? Math.max(0, Math.round((new Date(isoDay(new Date())+'T12:00:00') - new Date(d+'T12:00:00')) / 864e5)) : 0;
-  const arrivedOn = o => (o.when && (o.when['Arrived'] || o.when['Customer told'])) || '';
+  const arrivedOn = o => (o.when && (o.when['Arrived'] || o.when['Customer told'])) || o.at || ''; // older records: order date
   const waited = o => HOLD.includes(statusOf(o)) ? daysSince(arrivedOn(o)) : OPEN.includes(statusOf(o)) ? daysSince(o.at) : '';
   function depositTip(price, noret){
     if (noret) return 'Take full payment now (they can\'t send it back)';

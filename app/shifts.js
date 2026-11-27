@@ -76,7 +76,8 @@
     ready = (async () => {
       const team = {}, sched = {};
       for (const site in SEED_TEAM){
-        team[site] = [];
+        team[site] = []; sched[site] = [];
+        if (!A.demo) continue; // signed in: the real team is added on the Team screen, never the sample people
         for (const p of SEED_TEAM[site]) team[site].push({id:uid(), n:p.n, tier:p.tier, rate:p.rate, pinHash:await hashPin(site, p.pin)});
         sched[site] = seedShifts(site, SEED_TEAM[site]);
       }
@@ -160,12 +161,13 @@
   // Good-practice checks (Nov 2026 research): post schedules 14 days ahead (the fair-workweek standard; Wisconsin
   // has no such law) and leave at least 10 hours between a closing shift and the next opening shift.
   const NOTICE_DAYS = 14, REST_HOURS = 10;
-  function restProblem(who, list, wk){
+  function restProblem(who, list, wk, only){
     const mine = list.filter(s => s.who === who).map(s => {
       const st = new Date(s.date+'T'+s.start+':00'), en = new Date(s.date+'T'+s.end+':00'); if (en <= st) en.setDate(en.getDate()+1); return {s, st, en}; })
       .sort((a,b) => a.st - b.st);
     for (let i = 1; i < mine.length; i++){
       const gap = (mine[i].st - mine[i-1].en) / 36e5;
+      if (only && mine[i].s.id !== only && mine[i-1].s.id !== only) continue;
       if (gap >= 0 && gap < REST_HOURS && mine[i].s.date !== mine[i-1].s.date && (!wk || mine[i].s.date >= wk && mine[i].s.date < addDays(wk,7)))
         return who+' has only '+(Math.round(gap*10)/10)+' hours between shifts on '+A.fmtDate(mine[i-1].s.date)+' and '+A.fmtDate(mine[i].s.date)+'. Aim for at least '+REST_HOURS+'.';
     }
@@ -206,7 +208,7 @@
         const sh = {id:uid(), date:d.get('date'), start:d.get('start'), end:d.get('end'), who:d.get('who')||null};
         const bad = sh.who && minorProblem(person(sh.who), sh, sched()); if (bad) return toast(bad);
         sched().push(sh); A.save();
-        const notice = Math.round((new Date(sh.date+'T12:00:00') - new Date(isoDay(new Date())+'T12:00:00')) / 864e5), gap = sh.who && restProblem(sh.who, sched());
+        const notice = Math.round((new Date(sh.date+'T12:00:00') - new Date(isoDay(new Date())+'T12:00:00')) / 864e5), gap = sh.who && restProblem(sh.who, sched(), null, sh.id);
         toast(gap ? 'Shift added. '+gap : notice >= 0 && notice < NOTICE_DAYS && sh.who ? 'Shift added with '+Math.max(0,notice)+' days\' notice. Two weeks is the good-practice standard, so check it works for '+sh.who+'.' : 'Shift added'); A.route(); });
       v.append(f);
       // week totals against overtime
