@@ -6,7 +6,7 @@
 //               available, on hand). It runs on Shopify's side; a later run collects it. Repeats hourly.
 //            2. Sales: orders changed since the last run (Shopify allows the last 60 days), line by line.
 //   create (manager or owner): makes a Shopify product from a catalog title (Title search > Create in Shopify).
-//   apply  (owner only): sends pending cost and vendor changes from shopify_changes to Shopify, one by one,
+//   apply  (owner only): sends pending price, cost and vendor changes from shopify_changes to Shopify, one by one,
 //          and records what happened.
 // The access token lives only in shopify_conn (see supabase/shopify.sql) and in this function's memory.
 // "Verify JWT with legacy secret" must be OFF: the timer has no sign-in; this code checks the key or the person.
@@ -78,7 +78,7 @@ Deno.serve(async (req) => {
   if (action === "apply") {
     if (role !== "owner") return json({ error: "owner-only" }, 403);
     const ids: number[] = Array.isArray(body.ids) ? body.ids.map(Number).filter(Boolean).slice(0, 200) : [];
-    let q = admin.from("shopify_changes").select("*").eq("status", "pending").in("kind", ["cost", "vendor"]).order("id").limit(200);
+    let q = admin.from("shopify_changes").select("*").eq("status", "pending").in("kind", ["cost", "vendor", "price"]).order("id").limit(200);
     if (ids.length) q = q.in("id", ids);
     const { data: list } = await q;
     let done = 0, failed = 0;
@@ -87,7 +87,16 @@ Deno.serve(async (req) => {
       let err = "";
       try {
         if (!v) err = "That item is not in the synced product list.";
-        else if (c.kind === "cost") {
+        else if (c.kind === "price") {
+          const price = Number(c.new_value);
+          if (!(price > 0 && price < 100000)) err = "Price must be a number above 0.";
+          else {
+            const d = await gql(`mutation($p: ID!, $v: [ProductVariantsBulkInput!]!) { productVariantsBulkUpdate(productId: $p, variants: $v) { userErrors { message } } }`,
+              { p: "gid://shopify/Product/" + v.product_id, v: [{ id: "gid://shopify/ProductVariant/" + c.variant_id, price: price.toFixed(2) }] });
+            err = (d.productVariantsBulkUpdate.userErrors ?? []).map((e: { message: string }) => e.message).join("; ");
+            if (!err) await admin.from("shopify_variants").update({ price }).eq("variant_id", c.variant_id);
+          }
+        } else if (c.kind === "cost") {
           const cost = Number(c.new_value);
           if (!(cost >= 0)) err = "Cost must be a number.";
           else {

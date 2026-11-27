@@ -1152,3 +1152,7 @@ do $$ begin
     perform cron.schedule('mailbox', '7-59/30 * * * *', 'select public.mailbox_tick()');
   end if;
 end $$;
+
+-- 15. Price changes to Shopify (Shopify screen > Propose a change > Propose price; the owner sends them like cost changes).
+alter table public.shopify_changes drop constraint if exists shopify_changes_kind_check;
+alter table public.shopify_changes add constraint shopify_changes_kind_check check (kind in ('cost','vendor','stock','price'));
