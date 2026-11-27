@@ -11,11 +11,27 @@
   const S = () => A.state();
   const MGR = ['manager','owner'];
   const isMgr = () => MGR.includes(S().tier);
-  const REASONS = {damaged:'Damaged', stolen:'Stolen or missing', expired:'Expired or spoiled', donated:'Donated to a charity or school', giveaway:'Given away (event, promo, sample)', used:'Used in the store'};
+  // Write-offs and giveaways, grouped by how an accountant usually treats them. Managers and owners only.
+  //   group: promo = advertising and promotion (at cost), charity = charitable gift (at cost, keep the letter),
+  //          loss = inventory loss (usually through cost of goods sold), sales = discounts (lower sales, not an expense),
+  //          giftcard = donated gift cards (no cost until redeemed; track what is still out).
+  const REASONS = {
+    promo:{l:'Free samples, candy or promo items', g:'promo'},
+    sponsor:{l:'Event sponsorship (store named or shown)', g:'promo'},
+    raffle:{l:'Raffle basket or prize for an event', g:'promo'},
+    charity:{l:'Donation to a charity, school or library', g:'charity'},
+    giftcard:{l:'Gift card donated (event, raffle, charity)', g:'giftcard'},
+    discount:{l:'Discount or comp for a customer', g:'sales'},
+    damaged:{l:'Damaged', g:'loss'}, stolen:{l:'Stolen or missing', g:'loss'}, expired:{l:'Expired or spoiled', g:'loss'}, used:{l:'Used in the store', g:'loss'},
+    donated:{l:'Donated (older entry)', g:'charity'}, giveaway:{l:'Given away (older entry)', g:'promo'} };
+  const GROUPS = {promo:'Advertising and promotion (at cost)', charity:'Charitable donations (at cost)', loss:'Inventory losses (at cost)', sales:'Discounts and comps (retail value, reduces sales)', giftcard:'Gift cards donated (face value still out)'};
+  const rl = k => (REASONS[k] || {l:k}).l;
+  const canWriteOff = () => MGR.includes(actorTier());
   const OTHER = {cashout:'Cash paid out of the drawer', homeoffice:'Home office or home storage', question:'Question for the accountant', other:'Something else for the books'};
 
   function T(){ const s = S(); s.tax = s.tax || {trips:[], writeoffs:[], notes:[], places:[], rate:0.70, rateYear:2025, vehicle:'', office:{sqft:0, method:'simplified'}};
     const t = s.tax; ['trips','writeoffs','notes','places'].forEach(k => t[k] = t[k] || []);
+    s.writeoffs = s.writeoffs || []; if (t.writeoffs.length){ s.writeoffs.push(...t.writeoffs); t.writeoffs = []; }
     if (!t.places.length) t.places = [{n:'Post office', mi:2}, {n:'Bank', mi:2}, {n:'Office supply store', mi:6}];
     s.exp = s.exp || []; return t; }
   const here = list => list.filter(x => x.site === S().site);
@@ -43,7 +59,7 @@
   // ---------- the quick log forms (used on the Log it screen and in store mode) ----------
   function forms(onDone){
     const t = T(), box = h('div',{class:'grid'});
-    const tabs = [['trip','🚗 Trip'],['receipt','🧾 Receipt'],['writeoff','📦 Write-off'],['other','📝 Other']];
+    const tabs = [['trip','🚗 Trip'],['receipt','🧾 Receipt']].concat(canWriteOff() ? [['writeoff','🎁 Write-off or giveaway']] : []).concat([['other','📝 Other']]);
     let cur = 'trip';
     const bar = h('div',{class:'row',role:'tablist'}), body = h('div');
     const draw = () => { bar.replaceChildren(...tabs.map(([k,l]) => h('button',{class:'btn sm '+(k===cur?'':'quiet'),type:'button',role:'tab','aria-selected':String(k===cur),onclick:()=>{ cur = k; draw(); }}, l)));
@@ -86,18 +102,36 @@
       return f; }
 
     function writeoff(){
+      if (!canWriteOff()) return h('p',{class:'muted'},'Only a store manager or the owner records write-offs and giveaways.');
+      let photo = null; const pv = h('span',{class:'small muted'},'');
       const f = h('form',{class:'grid'},
-        h('p',{class:'small muted'},'Stock that left without a sale. Write it down the day it happens, with what it cost you.'),
+        h('p',{class:'small muted'},'Anything that leaves without a full sale: candy and samples, raffle baskets, gift cards for events, donations, discounts, damaged or stolen stock. Record it the day it happens.'),
         h('label',{class:'f'},'Date', h('input',{type:'date',name:'date',value:isoDay(new Date()),required:true})),
-        h('label',{class:'f'},'What happened', h('select',{name:'why'}, Object.entries(REASONS).map(([k,l]) => h('option',{value:k},l)))),
-        h('label',{class:'f'},'Item (title, ISBN or SKU)', h('input',{type:'text',name:'item',maxlength:'120',required:true})),
-        h('label',{class:'f'},'How many', h('input',{type:'number',name:'qty',min:'1',value:'1',required:true})),
-        h('label',{class:'f'},'Cost each ($, what you paid)', h('input',{type:'number',name:'cost',step:'0.01',min:'0'})),
-        h('label',{class:'f'},'Given to (donations only)', h('input',{type:'text',name:'to',maxlength:'80',placeholder:'Charity, school or library'})),
-        h('button',{class:'btn',type:'submit'},'Log write-off'));
-      f.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(f);
-        T().writeoffs.push({id:uid(), site:S().site, date:String(d.get('date')), why:String(d.get('why')), item:String(d.get('item')).trim(), qty:+d.get('qty')||1, cost:+d.get('cost')||0, to:String(d.get('to')||'').trim(), by:who(), status:status()});
-        done('Write-off logged. Remember to lower the count in Shopify.'); });
+        h('label',{class:'f'},'What happened', h('select',{name:'why',onchange:()=>show()}, Object.entries(REASONS).filter(([k]) => k !== 'donated' && k !== 'giveaway').map(([k,r]) => h('option',{value:k},r.l)))),
+        h('label',{class:'f'},'Item or items', h('input',{type:'text',name:'item',maxlength:'160',required:true,placeholder:'e.g. Fig candy bags, 3 novels and a mug'})),
+        h('label',{class:'f qty'},'How many', h('input',{type:'number',name:'qty',min:'1',value:'1',required:true})),
+        h('label',{class:'f cost'},'Cost each ($, what you paid)', h('input',{type:'number',name:'cost',step:'0.01',min:'0'})),
+        h('label',{class:'f retail'},'Retail value each ($, optional)', h('input',{type:'number',name:'retail',step:'0.01',min:'0'})),
+        h('label',{class:'f gc',hidden:true},'Gift card amount ($)', h('input',{type:'number',name:'face',step:'0.01',min:'0'})),
+        h('label',{class:'f to'},'Given to or event', h('input',{type:'text',name:'to',maxlength:'100',placeholder:'Charity, school, event or customer'})),
+        h('label',{class:'checkrow c501',hidden:true}, h('input',{type:'checkbox',name:'c501'}), 'They are a registered charity (501(c)(3)) and gave a receipt or letter'),
+        h('div',{class:'row'}, h('button',{class:'btn ghost sm',type:'button',onclick:async()=>{ photo = await takePhoto(); pv.textContent = photo ? '✓ Photo added' : ''; }},'📷 Photo (letter, receipt or the items)'), pv),
+        h('label',{class:'checkrow'}, h('input',{type:'checkbox',name:'stock',checked:true}), 'It came out of stock (lower the count in Shopify)'),
+        h('p',{class:'small muted tip'},''),
+        h('button',{class:'btn',type:'submit'},'Save'));
+      const TIPS = {promo:'Usually advertising: what it cost you.', sponsor:'Usually advertising when the store is named or shown. Keep a photo of the sign or program.', raffle:'Advertising if it promotes the store; a donation if it goes to a charity. Note which.',
+        charity:'For stock given to a charity, the deduction is usually what it cost you. Keep their letter or receipt.', giftcard:'A donated gift card costs nothing until someone uses it. Track it here; it shows as still out.',
+        discount:'A discount lowers the sale; it is not an expense. Ring it in the register too so sales are right.', damaged:'Usually goes through cost of goods sold. Lower the Shopify count.', stolen:'Usually goes through cost of goods sold. Lower the Shopify count.', expired:'Usually goes through cost of goods sold.', used:'Supplies taken from stock for the store.'};
+      const q = sel => f.querySelector(sel);
+      function show(){ const k = f.why.value, g = REASONS[k].g;
+        q('.gc').hidden = g !== 'giftcard'; q('.qty').hidden = q('.cost').hidden = g === 'giftcard'; q('.c501').hidden = !(g === 'charity' || k === 'raffle'); q('.tip').textContent = TIPS[k] || '';
+        f.stock.checked = g !== 'giftcard' && g !== 'sales'; }
+      show();
+      f.addEventListener('submit', async e => { e.preventDefault(); const d = new FormData(f), id = uid(), k = String(d.get('why'));
+        let pid = null; if (photo){ try { await PH.put(id, photo); pid = id; } catch(err){} }
+        S().writeoffs.push({id, site:S().site, date:String(d.get('date')), why:k, item:String(d.get('item')).trim(), qty:REASONS[k].g === 'giftcard' ? 1 : (+d.get('qty')||1), cost:REASONS[k].g === 'giftcard' ? 0 : (+d.get('cost')||0),
+          retail:+d.get('retail')||0, face:+d.get('face')||0, to:String(d.get('to')||'').trim(), c501:!!d.get('c501'), stock:!!d.get('stock'), photo:pid, redeemed:0, by:who(), status:'ok'});
+        done(d.get('stock') ? 'Saved. Remember to lower the count in Shopify.' : 'Saved.'); });
       return f; }
 
     function other(){
@@ -123,7 +157,7 @@
     v.append(head('Tax records · '+A.site().name, 'Log it for the books', 'Trips, receipts, write-offs and anything your accountant will ask about. Takes a minute now, saves hours in April.'));
     v.append(h('div',{class:'card'}, forms()));
     const t = T(), pend = [...here(t.trips).map(x => ['Trip', x, x.date+' · '+x.mi+' mi to '+x.to+' · '+x.why]), ...here(S().exp).filter(x => x.status === 'pending').map(x => ['Receipt', x, x.date+' · '+money(x.amt)+' · '+(x.payee||'')+' · '+x.cat]),
-      ...here(t.writeoffs).map(x => ['Write-off', x, x.date+' · '+x.qty+' × '+x.item+' · '+REASONS[x.why]]), ...here(t.notes).map(x => ['Note', x, x.date+' · '+OTHER[x.kind]+' · '+x.text.slice(0,80)])].filter(([,x]) => x.status === 'pending');
+      ...here(S().writeoffs).map(x => ['Write-off', x, x.date+' · '+x.qty+' × '+x.item+' · '+rl(x.why)]), ...here(t.notes).map(x => ['Note', x, x.date+' · '+OTHER[x.kind]+' · '+x.text.slice(0,80)])].filter(([,x]) => x.status === 'pending');
     if (isMgr()) v.append(h('div',{class:'card'}, h('h2',null,'Waiting for your OK'),
       pend.length ? h('div',{class:'list'}, pend.map(([k,x,txt]) => h('div',{class:'item'}, h('b',null,k), h('span',{class:'small'}, txt), h('span',{class:'small muted'},'Logged by '+x.by),
         h('div',{class:'row'}, x.receipt ? h('button',{class:'btn quiet sm',type:'button',onclick:()=>viewPhoto(x.receipt)},'See receipt') : null,
@@ -155,7 +189,9 @@
     v.append(h('label',{class:'f'},'Tax year', h('select',{onchange:e=>{ S().taxYear = +e.target.value; A.save(); A.route(); }}, years.map(n => h('option',{value:String(n),selected:String(n)===y},String(n))))));
     const ex = S().exp.filter(inY), byCat = {}; ex.forEach(x => byCat[x.cat] = (byCat[x.cat]||0) + x.amt);
     const trips = t.trips.filter(inY), miles = trips.reduce((a,x) => a + x.mi, 0);
-    const wo = t.writeoffs.filter(inY), woBy = {}; wo.forEach(x => woBy[x.why] = (woBy[x.why]||0) + x.qty*x.cost);
+    const wo = (S().writeoffs || []).filter(inY), woBy = {}, gc = [];
+    wo.forEach(x => { const g = (REASONS[x.why] || {g:'loss'}).g; if (g === 'giftcard'){ gc.push(x); return; } woBy[g] = woBy[g] || {cost:0, retail:0, n:0}; woBy[g].cost += x.qty*x.cost; woBy[g].retail += x.qty*(x.retail||0); woBy[g].n++; });
+    const noLetter = wo.filter(x => (REASONS[x.why] || {}).g === 'charity' && !x.c501).length;
     const notes = t.notes.filter(inY), owed = ex.filter(x => /own money/.test(x.pay||''));
     const noReceipt = ex.filter(x => x.amt >= 75 && !x.receipt).length;
     const sq = +(t.office.sqft||0), office = Math.min(sq, 300) * 5;
@@ -163,8 +199,13 @@
       noReceipt ? h('p',{class:'small'},'⚠ '+noReceipt+' expenses of $75 or more have no receipt photo.') : null,
       owed.length ? h('p',{class:'small'},'Paid with personal money (check they were paid back): '+money(owed.reduce((a,x) => a + x.amt, 0))) : null));
     v.append(h('div',{class:'card'}, h('h2',null,'Mileage'), h('p',null, miles.toLocaleString(undefined,{maximumFractionDigits:1})+' business miles · about '+money(miles*t.rate)+' at '+money(t.rate)+'/mile'), h('a',{href:'#/mileage'},'Open the mileage log')));
-    v.append(h('div',{class:'card'}, h('h2',null,'Stock write-offs (at cost)'), Object.keys(woBy).length ? h('ul',null, Object.entries(woBy).map(([k,a]) => h('li',null, REASONS[k]+': '+money(a)))) : h('p',{class:'muted'},'None logged.'),
-      h('p',{class:'small muted'},'Donations of stock to a qualified charity: keep the letter or receipt from them. Most stores deduct damaged or stolen stock through cost of goods sold; ask your accountant which way you file.')));
+    v.append(h('div',{class:'card'}, h('h2',null,'Write-offs and giveaways'),
+      Object.keys(woBy).length || gc.length ? h('ul',null, Object.entries(woBy).map(([g,a]) => h('li',null, GROUPS[g]+': '+(g === 'sales' ? money(a.retail) : money(a.cost))+' · '+a.n+' entr'+(a.n===1?'y':'ies'))),
+        gc.length ? h('li',null, GROUPS.giftcard+': '+money(gc.reduce((a,x) => a + x.face - (x.redeemed||0), 0))+' of '+money(gc.reduce((a,x) => a + x.face, 0))+' donated') : null) : h('p',{class:'muted'},'None logged.'),
+      noLetter ? h('p',{class:'small'},'⚠ '+noLetter+' donation'+(noLetter>1?'s':'')+' without a charity receipt or letter marked.') : null,
+      gc.length && isMgr() ? h('details',null, h('summary',null,'Mark donated gift cards as used'), h('div',{class:'list'}, gc.map(x => h('div',{class:'item'}, h('b',null, money(x.face)+' · '+(x.to||x.item)), h('span',{class:'small muted'}, A.fmtDate(x.date)+(x.redeemed ? ' · '+money(x.redeemed)+' used' : ' · not used yet')),
+        h('label',{class:'f'},'Amount used so far ($)', h('input',{type:'number',step:'0.01',min:'0',max:String(x.face),value:String(x.redeemed||''),onchange:e=>{ x.redeemed = Math.min(x.face, +e.target.value||0); A.save(); A.route(); }})))))) : null,
+      h('p',{class:'small muted'},'Your accountant decides the final treatment. Charities: keep their letter. Discounts: ring them in the register too.')));
     v.append(h('div',{class:'card'}, h('h2',null,'Home office'), h('p',{class:'small muted'},'If you use part of your home only and regularly for the business. The simplified method is $5 a square foot, up to 300 square feet.'),
       isMgr() ? h('label',{class:'f'},'Square feet used only for the business', h('input',{type:'number',min:'0',max:'2000',value:String(sq||''),onchange:e=>{ t.office.sqft = +e.target.value||0; A.save(); A.route(); }})) : null,
       sq ? h('p',null,'Simplified method: about '+money(office)) : null));
@@ -174,7 +215,7 @@
     const pack = () => download('tax-records-'+y+'.csv','text/csv',toCsv([['Section','Date','Item','Amount','Detail','Logged by'],
       ...ex.map(x => ['Expense', x.date, x.cat+(x.payee ? ' · '+x.payee : ''), x.amt.toFixed(2), (x.note||'')+(x.receipt ? ' (receipt photo)' : ''), x.by||'']),
       ...trips.map(x => ['Mileage', x.date, x.to, (x.mi*t.rate).toFixed(2), x.mi+' mi · '+x.why, x.by]),
-      ...wo.map(x => ['Write-off', x.date, x.item, (x.qty*x.cost).toFixed(2), x.qty+' × '+REASONS[x.why]+(x.to ? ' · to '+x.to : ''), x.by]),
+      ...wo.map(x => ['Write-off: '+GROUPS[(REASONS[x.why]||{g:'loss'}).g], x.date, x.item, ((REASONS[x.why]||{}).g === 'giftcard' ? x.face : (REASONS[x.why]||{}).g === 'sales' ? x.qty*(x.retail||0) : x.qty*x.cost).toFixed(2), x.qty+' × '+rl(x.why)+(x.to ? ' · to '+x.to : '')+(x.c501 ? ' · charity letter' : '')+(x.photo ? ' (photo)' : ''), x.by]),
       ...notes.map(x => ['Note', x.date, OTHER[x.kind], x.amt ? x.amt.toFixed(2) : '', x.text, x.by]),
       ...(sq ? [['Home office', y+'-12-31', sq+' sq ft (simplified)', office.toFixed(2), '', '']] : [])]));
     v.append(h('div',{class:'card'}, h('h2',null,'Send to your accountant or QuickBooks'),
@@ -185,6 +226,6 @@
   A.register({id:'taxlog', name:'Tax records', what:'Mileage log, receipt photos, stock write-offs and notes for the books, logged during shifts. Year-end summary and QuickBooks-ready export.', tiers:['staff','lead','manager','owner'],
     views:{taxlog:{t:'Log it for the books', ic:'🗂️', render:logView}, mileage:{t:'Mileage log', ic:'🚗', render:mileage}, taxsum:{t:'Tax summary', ic:'📒', render:summary}}});
   A.ownerHooks.push(v => { const t = T(), y = String(new Date().getFullYear()), miles = t.trips.filter(x => x.date.startsWith(y) && x.status === 'ok').reduce((a,x) => a + x.mi, 0);
-    const pend = [...t.trips, ...t.writeoffs, ...t.notes, ...S().exp].filter(x => x.status === 'pending').length;
+    const pend = [...t.trips, ...(S().writeoffs||[]), ...t.notes, ...S().exp].filter(x => x.status === 'pending').length;
     v.append(h('div',{class:'card'}, h('h2',null,'Tax records '+y), h('p',null, miles.toLocaleString(undefined,{maximumFractionDigits:1})+' business miles'+(pend ? ' · '+pend+' items waiting for your OK' : '')), h('a',{href:'#/taxsum'},'See the year-end summary'))); });
 })();

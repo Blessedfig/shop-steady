@@ -7,6 +7,7 @@
 --                       setup (store names, business type) and which modules are on.
 --   save_doc()        : saves an area only if nobody else saved it since you loaded it, so the app can merge
 --                       two people's changes instead of one overwriting the other.
+-- Write-offs and giveaways (key 'writeoffs') can be changed only by a manager or the owner.
 -- Not covered yet: each area is shared as a whole, so staff devices receive pay rates inside "shifts".
 
 -- 1. Roles
@@ -72,6 +73,7 @@ declare v bigint; who text := lower(coalesce(auth.jwt() ->> 'email',''));
 begin
   if not public.is_desk_member() then raise exception 'not-member'; end if;
   if p_key in ('setup','mods') and public.my_role() is distinct from 'owner' then raise exception 'owner-only'; end if;
+  if p_key = 'writeoffs' and public.role_rank(public.my_role()) < 3 then raise exception 'manager-only'; end if;
   select version into v from public.app_docs where key = p_key for update;
   if v is null then
     insert into public.app_docs (key, data, version, updated_by) values (p_key, p_data, 1, who); return 1;

@@ -10,7 +10,7 @@
 (function(){
   const A = window.SSApp; if (!A) return;
   const {h, head, toast} = A;
-  const SHARED = ['inv','exp','shifts','voice','people','notes','tax','setup','mods','scans']; // 'catalog' is shared separately by count.js
+  const SHARED = ['inv','exp','shifts','voice','people','notes','tax','setup','mods','scans','writeoffs']; // 'catalog' is shared separately by count.js
   const RANK = {staff:1, lead:2, manager:3, owner:4};
   const VKEY = 'shop-steady-sync';
   let sb = null, ver = {}, base = {}, busy = false, again = false, timer = null, statusEl = null, lastErr = '';
@@ -72,6 +72,7 @@
       for (const k of SHARED){
         if (S[k] === undefined || same(S[k], base[k])) continue;
         if ((k === 'setup' || k === 'mods') && A.myRole !== 'owner') continue;
+        if (k === 'writeoffs' && !(A.myRole === 'owner' || A.myRole === 'manager')) continue;
         for (let tries = 0; tries < 4; tries++){
           status('Saving…');
           const snap = clone(S[k]);
