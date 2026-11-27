@@ -157,6 +157,21 @@
   }
 
   // ---------- schedule (week view) ----------
+  // Good-practice checks (Nov 2026 research): post schedules 14 days ahead (the fair-workweek standard; Wisconsin
+  // has no such law) and leave at least 10 hours between a closing shift and the next opening shift.
+  const NOTICE_DAYS = 14, REST_HOURS = 10;
+  function restProblem(who, list, wk){
+    const mine = list.filter(s => s.who === who).map(s => {
+      const st = new Date(s.date+'T'+s.start+':00'), en = new Date(s.date+'T'+s.end+':00'); if (en <= st) en.setDate(en.getDate()+1); return {s, st, en}; })
+      .sort((a,b) => a.st - b.st);
+    for (let i = 1; i < mine.length; i++){
+      const gap = (mine[i].st - mine[i-1].en) / 36e5;
+      if (gap >= 0 && gap < REST_HOURS && mine[i].s.date !== mine[i-1].s.date && (!wk || mine[i].s.date >= wk && mine[i].s.date < addDays(wk,7)))
+        return who+' has only '+(Math.round(gap*10)/10)+' hours between shifts on '+A.fmtDate(mine[i-1].s.date)+' and '+A.fmtDate(mine[i].s.date)+'. Aim for at least '+REST_HOURS+'.';
+    }
+    return '';
+  }
+
   function schedule(v){
     v.append(head('Shifts · '+A.site().name, 'Schedule', isMgr() ? 'Plan the week. Staff see their own shifts on their phones.' : 'Your upcoming shifts.'));
     ensure().then(() => {
@@ -190,12 +205,18 @@
       f.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(f);
         const sh = {id:uid(), date:d.get('date'), start:d.get('start'), end:d.get('end'), who:d.get('who')||null};
         const bad = sh.who && minorProblem(person(sh.who), sh, sched()); if (bad) return toast(bad);
-        sched().push(sh); A.save(); toast('Shift added'); A.route(); });
+        sched().push(sh); A.save();
+        const notice = Math.round((new Date(sh.date+'T12:00:00') - new Date(isoDay(new Date())+'T12:00:00')) / 864e5), gap = sh.who && restProblem(sh.who, sched());
+        toast(gap ? 'Shift added. '+gap : notice >= 0 && notice < NOTICE_DAYS && sh.who ? 'Shift added with '+Math.max(0,notice)+' days\' notice. Two weeks is the good-practice standard, so check it works for '+sh.who+'.' : 'Shift added'); A.route(); });
       v.append(f);
       // week totals against overtime
       const planned = {}; sched().filter(s => s.date >= wk && s.date < addDays(wk,7) && s.who).forEach(s => planned[s.who] = (planned[s.who]||0) + shiftMin(s));
+      const gaps = [...new Set(sched().filter(s => s.date >= addDays(wk,-1) && s.date < addDays(wk,7) && s.who).map(s => s.who))].map(n => restProblem(n, sched(), wk)).filter(Boolean);
+      const short = addDays(isoDay(new Date()), NOTICE_DAYS) > wk && wk >= weekStart(isoDay(new Date())) && Object.keys(planned).length;
       v.append(h('div',{class:'card'}, h('h2',null,'Planned hours this week'),
         Object.keys(planned).length ? h('ul',null, Object.entries(planned).map(([n,m]) => h('li',null, n+': '+hrs(m)+' h', m > OT_WEEK*60 ? h('span',{class:'chip amber'},'over 40 h: overtime') : null))) : h('p',{class:'muted'},'Nothing planned yet.'),
+        gaps.length ? h('div',{class:'msg err'}, h('b',null,'Short rest between shifts. '), gaps.join(' ')) : null,
+        short ? h('p',{class:'small muted'},'Good practice is to post the schedule two weeks ahead, so people can plan their lives. Wisconsin doesn\'t require it, but it keeps people around.') : null,
         h('div',{class:'row'},
           h('button',{class:'btn ghost sm',type:'button',onclick:()=>{ // copy last week's shifts into this week
             const prev = sched().filter(s => s.date >= addDays(wk,-7) && s.date < wk);
@@ -373,6 +394,8 @@
         h('button',{class:'btn',type:'submit'},'Save checklists'));
       f.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(f), split = s => String(s).split('\n').map(x => x.trim()).filter(Boolean);
         X().lists[S().site] = {open:split(d.get('open')), close:split(d.get('close'))}; A.save(); toast('Saved'); A.route(); });
+      const long = ['open','close'].filter(k => (L[k]||[]).length > 9);
+      if (long.length) f.append(h('p',{class:'msg'}, 'Your '+long.map(k => k === 'open' ? 'opening' : 'closing').join(' and ')+' list has more than 9 steps. Short lists get done: keep the 5 to 9 steps that really matter, and move the rest to a how-to note.'));
       v.append(f, checklistCard(whoAmI()));
       const reps = (X().reports || []).filter(r => r.site === S().site);
       v.append(h('div',{class:'card'}, h('h2',null,'Reports of steps not done'),

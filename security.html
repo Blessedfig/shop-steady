@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Security | Downtown Stube</title>
+<meta name="description" content="How Downtown Stube keeps a small shop's staff, customer and money records safe, and what it does not do yet.">
+<style>
+:root{--bg:#F2F5F0;--ink:#1A2A22;--muted:#56675E;--sky:#1B4332;--line:#D8E0DA}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 1.05rem/1.6 "Segoe UI",system-ui,sans-serif}
+.wrap{max-width:880px;margin:0 auto;padding:2rem 16px}
+h1{font-size:2rem;line-height:1.2}
+a{color:var(--sky)}
+.btn{display:inline-block;background:var(--sky);color:#fff;border-radius:99px;padding:.8rem 1.3rem;text-decoration:none;font-weight:700;min-height:48px;box-sizing:border-box}
+nav a{margin-right:1rem}
+footer{border-top:1px solid var(--line);color:var(--muted);font-size:.9rem}
+h2{font-size:1.3rem;margin-top:2rem}
+li{margin:.35rem 0}
+</style>
+</head>
+<body>
+<header class="wrap"><nav aria-label="Main"><a href="./">Home</a><a href="features.html">Features</a><a href="get-app.html">Get the app</a><a href="app/">Staff sign-in</a></nav></header>
+<main class="wrap">
+<h1>How we keep your shop's records safe</h1>
+<p>Downtown Stube holds your schedules, time clock, customers, special orders and cash logs. Here is how that information is protected, in plain words, and what isn't finished yet.</p>
+
+<h2>Who can get in</h2>
+<ul>
+<li>Sign-in is by invitation only. Nobody can create an account on their own.</li>
+<li>Each person has a level: staff, shift lead, manager or owner. Pay, cash safe records, HR files and manager notes are kept in private areas that only a store manager or the owner can open. Staff phones never download them.</li>
+<li>Store-mode PINs are checked by the database, not the tablet, and lock after repeated wrong tries.</li>
+<li>The app signs you out after 12 hours without use.</li>
+</ul>
+
+<h2>Where the data lives</h2>
+<ul>
+<li>Your records are stored with Supabase, a database host that holds a SOC 2 Type 2 report. Data is encrypted while it travels (TLS) and while it is stored (AES-256). Downtown Stube itself is a small company and does not have its own SOC 2 audit.</li>
+<li>We never take card payments. Those stay in your register (Shopify POS or similar).</li>
+<li>We ask you not to store Social Security numbers, ID scans, bank account numbers or medical records in the app. Those belong in a locked file or your payroll provider. Keeping them out means a leak could never expose them.</li>
+<li>We don't use fingerprint or face scans for clocking in.</li>
+</ul>
+
+<h2>The AI helpers</h2>
+<ul>
+<li>The Ask assistant only reads. It sees what the person asking is allowed to see, and nothing more. The owner sets a daily question limit.</li>
+<li>When the app reads an invoice for you, it removes email addresses, phone numbers and card-like numbers before the text is sent. A person checks every line before anything counts.</li>
+<li>AI-polished notes show your original next to the new wording, and you choose which to keep.</li>
+</ul>
+
+<h2>Your data is yours</h2>
+<ul>
+<li>The owner can download everything in one file at any time, from Setup. No request, no fee.</li>
+<li>Cancel any time. There is no contract.</li>
+<li>If Downtown Stube ever shuts down, we will give at least 90 days' notice so you can download everything first.</li>
+</ul>
+
+<h2>If something goes wrong</h2>
+<ul>
+<li>If we learn that your records were exposed, we will tell you as soon as we can, and no later than Wisconsin's 45-day limit for notifying affected people.</li>
+<li>To report a security problem, email the address under Contact on our home page.</li>
+</ul>
+
+<h2>Not done yet</h2>
+<p>Downtown Stube is in private testing. Before other shops join, we are finishing:</p>
+<ul>
+<li>Two-step sign-in (an authenticator app) required for owners and managers.</li>
+<li>Daily hosted database backups on paid hosting, in addition to the owner's own download.</li>
+<li>A public status page.</li>
+<li>Terms of service and a data processing agreement reviewed by a lawyer.</li>
+</ul>
+<p>Please don't enter real customer data in the demo.</p>
+</main>
+<footer class="wrap"><nav aria-label="Footer"><a href="./">Home</a><a href="privacy.html">Privacy</a><a href="security.html">Security</a><a href="accessibility.html">Accessibility</a></nav></footer>
+</body>
+</html>

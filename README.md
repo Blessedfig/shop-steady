@@ -14,6 +14,10 @@ Live test version: https://blessedfig.github.io/shop-steady/app/ (made-up sample
 - **Business types:** each location picks a type (bookstore, retail shop, café, services or rentals) under **Setup**. The type sets the role names and which modules start on. The owner can rename any role.
 - **Inventory and reorders:** stock by ISBN or SKU, low-stock flags, suggested orders grouped by supplier (CSV download), consignment and used copies.
 - **Expenses:** receipt log by category and an owner spending card on Home.
+- **Special orders:** deposits (full prepayment when the vendor won't take it back), a pickup message to copy, email or text, a contact log, and a waiting-for-pickup list with weekly reminders and a 30-day hold.
+- **Events and community impact:** log events, partners and giving; a quarterly or yearly impact report to copy into a letter or grant form.
+- **Good-practice nudges:** two weeks' schedule notice, 10 hours' rest between shifts, checklists of 9 steps or fewer, vendor claim dates for short or damaged shipments.
+- **Your data is yours:** the owner can download everything in one file under Setup, with a monthly reminder. See security.html for how data is protected.
 - Installable on phones (PWA), Android test build, accessibility and security checks on every change.
 
 ## Coming next
