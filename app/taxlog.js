@@ -191,6 +191,7 @@
   function summary(v){
     const t = T(), y = String(yearOf()), inY = x => x.date && x.date.startsWith(y) && x.status !== 'pending' && x.status !== 'no';
     v.append(head('Tax records · all locations', 'Year-end summary', 'Everything logged for the year, in one place for your accountant. Record keeping only, not tax advice.'));
+    if (A.VIEWS.books) v.append(h('p',{class:'small'},'For cost of goods sold, equipment depreciation, each purchase\'s tax line and what to set aside, open ', h('a',{href:'#/books'},'Tax year'),'.'));
     const years = [...new Set([new Date().getFullYear(), new Date().getFullYear()-1, ...S().exp.map(x => +x.date.slice(0,4))])].sort((a,b) => b-a);
     v.append(h('label',{class:'f'},'Tax year', h('select',{onchange:e=>{ S().taxYear = +e.target.value; A.save(); A.route(); }}, years.map(n => h('option',{value:String(n),selected:String(n)===y},String(n))))));
     const ex = S().exp.filter(inY), byCat = {}; ex.forEach(x => byCat[x.cat] = (byCat[x.cat]||0) + x.amt);
