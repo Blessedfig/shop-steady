@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Features: Downtown Stube</title>
+<meta name="description" content="Everything in Downtown Stube: owner dashboard, scheduling, store-mode time clock with PINs, checklists, timesheets and overtime, inventory and reorders, special orders, expenses and what's coming next.">
+<meta name="theme-color" content="#1B4332">
+<link rel="icon" type="image/png" href="app/icons/icon-192.png">
+<link rel="apple-touch-icon" href="app/icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shrikhand&family=Work+Sans:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./"><span class="brand-mark" aria-hidden="true"></span>Downtown Stube</a>
+    <nav aria-label="Main"><a href="./#stube">What's a Stube?</a><a href="features.html" aria-current="page">Features</a><a href="./#faq">Questions</a><a href="app/#/home">Owner dashboard</a><a class="btn primary" href="app/?demo#/home">Try the demo</a></nav>
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+<section class="hero">
+  <div class="wrap" style="grid-template-columns:1fr">
+    <div class="stack">
+      <span class="eyebrow">Features</span>
+      <h1>Everything a small shop runs on, in one place</h1>
+      <p class="lede">Each tool is a module you can switch on or off for each role. Start with what hurts most and add the rest when you're ready.</p>
+      <nav class="jump" aria-label="Jump to a feature">
+        <a href="#dashboard">Owner dashboard</a><a href="#team">Schedule and time clock</a><a href="#checklists">Checklists and training</a><a href="#inventory">Inventory and orders</a><a href="#money">Money</a><a href="#setup">Setup and roles</a><a href="#next">Coming next</a>
+      </nav>
+    </div>
+  </div>
+</section>
+
+<section id="dashboard" aria-labelledby="dash-h">
+  <div class="wrap feature">
+    <div class="stack">
+      <div class="status"><span class="tag">Available now</span></div>
+      <h2 id="dash-h">Owner dashboard, on the web and in the app</h2>
+      <p class="lede">Sign in on any computer and your home screen becomes the owner dashboard. It's the same account and the same data as the phone app, so a change on the shop tablet shows up on your laptop right away.</p>
+      <ul class="ticks">
+        <li>Spending and who's clocked in, on one screen</li>
+        <li>What needs you today: low stock and open shifts</li>
+        <li>Coming: sales and stock from Shopify, and labor as a share of sales</li>
+      </ul>
+      <div class="row"><a class="btn primary" href="app/#/home">Open the owner dashboard</a></div>
+    </div>
+    <div class="device" role="img" aria-label="Example owner dashboard with staff on shift, low-stock count, and spending by category.">
+      <div class="bar"><span class="brand-mark" aria-hidden="true"></span>Home<span class="who">Owner · All locations</span></div>
+      <div class="body">
+        <div class="tiles">
+          <div class="tile"><span>On shift</span><b>3</b><em>clocked in now</em></div>
+          <div class="tile"><span>Low stock</span><b>12</b><span>items</span></div>
+          <div class="tile"><span>Spending</span><b>$3.1k</b><span>this month</span></div>
+        </div>
+        <div class="lbl">Spending by category</div>
+        <div class="list">
+          <div><span class="t">Inventory</span><small>$2,140</small></div>
+          <div><span class="t">Supplies</span><small>$420</small></div>
+          <div><span class="t">Events and marketing</span><small>$310</small></div>
+          <div><span class="t">Utilities</span><small>$260</small></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="tint" id="team" aria-labelledby="team-h">
+  <div class="wrap feature flip">
+    <div class="stack">
+      <div class="status"><span class="tag">Available now</span></div>
+      <h2 id="team-h">Schedule, store mode and timesheets</h2>
+      <p class="lede">Build the week, publish it, and let the shared store tablet handle the clock. Each person taps their own PIN, and hours flow straight into timesheets.</p>
+      <ul class="ticks">
+        <li><b>Schedule:</b> a weekly planner with open shifts anyone can pick up</li>
+        <li><b>Store mode:</b> a shared tablet that stays signed in and survives power cuts</li>
+        <li><b>Team:</b> pay rates and personal PINs, kept to owners and managers</li>
+        <li><b>Timesheets:</b> overtime flagged, plus a payroll file to download</li>
+      </ul>
+    </div>
+    <div class="device" role="img" aria-label="Example store-mode clock-in confirmation.">
+      <div class="bar"><span class="brand-mark" aria-hidden="true"></span>Store mode<span class="who">10:01 AM</span></div>
+      <div class="body" style="text-align:center;padding-block:1.5rem">
+        <span class="chip" style="justify-self:center;font-size:.85rem">Clocked in</span>
+        <p style="margin:0 auto;font:800 1.4rem/1.2 var(--display)">Good morning, Maya</p>
+        <p style="margin:0 auto;color:var(--muted)">Shift 10 AM to 6 PM · Opening checklist is ready</p>
+        <div class="list" style="text-align:left">
+          <div><span class="t">This week so far</span><small>22.5 h</small></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="checklists" aria-labelledby="chk-h">
+  <div class="wrap feature">
+    <div class="stack">
+      <div class="status"><span class="tag">Available now</span><span class="tag alt">Staff playbook coming</span></div>
+      <h2 id="chk-h">Checklists that train as they go</h2>
+      <p class="lede">Opening, closing and daily routines, written once by you and followed step by step by everyone. New staff learn the job by doing it, and you can see what got done.</p>
+      <ul class="ticks">
+        <li>Separate lists for opening, closing and any day of the week</li>
+        <li>Each step can carry a short how-to in your own words</li>
+        <li>Coming: a staff playbook with your store's answers to common questions</li>
+      </ul>
+    </div>
+    <div class="device" role="img" aria-label="Example closing checklist with a how-to note under one step.">
+      <div class="bar"><span class="brand-mark" aria-hidden="true"></span>Closing checklist<span class="who">3 of 4 done</span></div>
+      <div class="body">
+        <div class="list">
+          <div><span class="chk on" aria-hidden="true"></span><span class="t">Count down the till</span></div>
+          <div><span class="chk on" aria-hidden="true"></span><span class="t">Run end-of-day report in the POS</span></div>
+          <div><span class="chk on" aria-hidden="true"></span><span class="t">Empty café trash and wipe counters</span></div>
+          <div style="display:grid;gap:.25rem"><span style="display:flex;gap:.55rem;align-items:center"><span class="chk" aria-hidden="true"></span><span class="t">Lock up and set the alarm</span></span><small style="padding-left:1.6rem">Code is on the card in the office. Back door first.</small></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="tint" id="inventory" aria-labelledby="inv-h">
+  <div class="wrap feature flip">
+    <div class="stack">
+      <div class="status"><span class="tag">Available now</span><span class="tag alt">Live supplier sync coming</span></div>
+      <h2 id="inv-h">Inventory, reorders and special orders</h2>
+      <p class="lede">Track stock by ISBN or SKU, see what's low, and send one tidy order per supplier. When a customer asks for something you don't carry, quote it at the margin you set.</p>
+      <ul class="ticks">
+        <li>ISBN check-digit validation, low-stock flags and reorder points</li>
+        <li>Suggested orders grouped by supplier, as a spreadsheet file</li>
+        <li>Consignment and used items alongside new stock</li>
+        <li>Import your stock list from a spreadsheet template</li>
+        <li>Stock counts, plus Shopify sync by file export</li><li>Customer accounts and special orders priced by your margin rules</li><li>Coming: live Shopify sync, Faire orders and one title search across every supplier</li>
+      </ul>
+    </div>
+    <div class="device" role="img" aria-label="Example inventory list with low-stock flags.">
+      <div class="bar"><span class="brand-mark" aria-hidden="true"></span>Inventory<span class="who">1,842 items</span></div>
+      <div class="body">
+        <div class="list">
+          <div><span class="t">Local trail guide</span><small>2 left</small><span class="chip amber">Low</span></div>
+          <div><span class="t">Picture book, holiday</span><small>1 left</small><span class="chip amber">Low</span></div>
+          <div><span class="t">Used: classic novel</span><small>4</small><span class="chip sky">Used</span></div>
+          <div><span class="t">Local candle (consignment)</span><small>9</small><span class="chip sky">Consign</span></div>
+          <div><span class="t">New release, fiction</span><small>12</small><span class="chip">OK</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="money" aria-labelledby="money-h">
+  <div class="wrap">
+    <div class="head">
+      <div class="status"><span class="tag">Expenses available now</span></div>
+      <h2 id="money-h">Money, without the shoebox of receipts</h2>
+      <p class="lede">Log a receipt in seconds by category. The owner spending card shows where the money went this month.</p>
+    </div>
+    <div class="grid g3">
+      <div class="card"><h3>Expense log</h3><p>Type in a receipt, pick a category, done. Download the log as a spreadsheet for your accountant.</p></div>
+      <div class="card"><h3>Payroll file</h3><p>Timesheets export hours, rates and overtime in one file for your payroll service or accountant.</p></div>
+      <div class="card"><h3>QuickBooks sync <span class="tag alt">Coming</span></h3><p>Send expenses and payroll totals to QuickBooks so the books stay current without retyping.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="tint" id="setup" aria-labelledby="setup-h">
+  <div class="wrap">
+    <div class="head">
+      <div class="status"><span class="tag">Available now</span></div>
+      <h2 id="setup-h">Setup, roles and sign-in</h2>
+      <p class="lede">Downtown Stube shapes itself to your business, not the other way around.</p>
+    </div>
+    <div class="grid g3">
+      <div class="card"><h3>Business types</h3><p>Bookstore, retail shop, café, services or rentals. Each sets role names and starting modules for that location.</p></div>
+      <div class="card"><h3>Four role tiers</h3><p>Staff, shift lead, manager and owner. Rename any role, and choose which modules each one can open.</p></div>
+      <div class="card"><h3>Invite-only sign-in</h3><p>Password or an emailed code, stays signed in on personal devices, signs out on its own when idle.</p></div>
+      <div class="card"><h3>Phones and computers</h3><p>Installs on iPhone, Android and desktop. <a href="get-app.html">How to install</a>.</p></div>
+      <div class="card"><h3>Multiple locations</h3><p>Each location keeps its own business type, role names and modules.</p></div>
+      <div class="card"><h3>Accessible</h3><p>Checked against WCAG 2.2 AA on every change. <a href="accessibility.html">Our accessibility notes</a>.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="next" aria-labelledby="next-h">
+  <div class="wrap">
+    <div class="head">
+      <span class="eyebrow">Roadmap</span>
+      <h2 id="next-h">Coming next</h2>
+      <p class="lede">Built in this order, tested in a real shop before anyone else sees it.</p>
+    </div>
+    <div class="grid g3">
+      <div class="card"><span class="tag alt">Next</span><h3>Live Shopify and Faire sync</h3><p>Shopify works by file today. Next, stock flows in on its own, and wholesale orders arrive from Faire and other sites.</p></div>
+      <div class="card"><span class="tag alt">Next</span><h3>One search across suppliers</h3><p>Look up a title or product once and see every supplier that has it, then order in a tap.</p></div>
+      <div class="card"><span class="tag">Available now</span><h3>Special orders</h3><p>Tie an order to a customer account and quote it at your target margin. Coming: telling them automatically when it lands.</p></div>
+      <div class="card"><span class="tag sky">Planned</span><h3>Decision planners</h3><p>Step-by-step help with big first-time calls, starting with "Should I hire?"</p></div>
+      <div class="card"><span class="tag sky">Planned</span><h3>HR files</h3><p>Offer letters, tax forms and reviews, kept privately per person.</p></div>
+      <div class="card"><span class="tag sky">Planned</span><h3>Community impact report</h3><p>Events, local jobs and partnerships, in a report for grants, landlords and local officials.</p></div>
+      <div class="card"><span class="tag sky">Planned</span><h3>Customer and staff insights</h3><p>Who your regulars are, what they buy, and which shifts run smoothest.</p></div>
+      <div class="card"><span class="tag sky">Planned</span><h3>Built-in backups</h3><p>Automatic weekly backups you can download and keep.</p></div>
+      <div class="card"><span class="tag sky">Planned</span><h3>App stores</h3><p>Downtown Stube in the Apple App Store and Google Play after testing.</p></div>
+    </div>
+  </div>
+</section>
+
+<section style="padding-top:0">
+  <div class="wrap">
+    <div class="cta">
+      <div class="stack">
+        <h2>Try it with sample data</h2>
+        <p>The demo shows every module above with a made-up shop. Switch "View as" to see each role.</p>
+      </div>
+      <div class="row"><a class="btn primary" href="app/?demo#/home">Try the live demo</a><a class="btn ghost" href="mailto:owner@theblessedfigtree.com?subject=Downtown%20Stube%20early%20access">Ask for early access</a></div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <a class="brand" href="./"><span class="brand-mark" aria-hidden="true"></span>Downtown Stube</a>
+    <nav aria-label="Footer"><a href="./">Home</a><a href="mailto:owner@theblessedfigtree.com?subject=Downtown%20Stube%20early%20access">Contact</a><a href="get-app.html">Get the app</a><a href="app/#/home">Sign in</a><a href="privacy.html">Privacy</a><a href="accessibility.html">Accessibility</a></nav>
+    <p>Downtown Stube is in private testing. Business and legal notes in the app are best readings, not legal, tax or financial advice.</p>
+  </div>
+</footer>
+</body>
+</html>
