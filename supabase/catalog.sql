@@ -483,7 +483,7 @@ begin
           'list_price', t.list_price, 'qty', l.qty, 'note', l.note, 'added_by', l.added_by,
           'unit_cost', case when see_cost then l.unit_cost end,
           'availability', coalesce(o.availability, 'unknown'), 'stock_qty', o.qty_available, 'checked_at', o.checked_at,
-          'vendor_sku', o.vendor_sku,
+          'vendor_sku', o.vendor_sku, 'qty_received', l.qty_received, 'received_at', l.received_at,
           'better', (select jsonb_build_object('vendor', v2.name, 'availability', o2.availability)
                       from public.vendor_offers o2 join public.vendors v2 on v2.id = o2.vendor_id
                       where o2.item_key = l.item_key and o2.vendor_id <> po.vendor_id and o2.availability in ('in_stock','low')
@@ -693,7 +693,9 @@ grant execute on function public.unlinked_shopify_vendors() to authenticated;
 --   list price, your shelf price and margin.
 alter table public.purchase_order_lines add column if not exists list_price numeric(10,2);
 alter table public.purchase_order_lines add column if not exists store_price numeric(10,2);
-alter table public.purchase_orders add column if not exists source text not null default 'app' check (source in ('app','receiving','import'));
+alter table public.purchase_orders add column if not exists source text not null default 'app';
+alter table public.purchase_orders drop constraint if exists purchase_orders_source_check;
+alter table public.purchase_orders add constraint purchase_orders_source_check check (source in ('app','receiving','import','shopify'));
 
 create or replace function public.find_vendor(p_name text) returns uuid language sql stable security definer set search_path = public as $$
   select coalesce(
@@ -732,6 +734,14 @@ begin
             case when r->>'price' ~ '^\d+(\.\d+)?$' then (r->>'price')::numeric end,
             (select max(sv.price) from public.shopify_variants sv where public.shopify_item_key(sv.barcode, sv.sku) = k))
     on conflict (po_id, item_key) do update set qty = least(l.qty + excluded.qty, 9999);
+    -- if Shopify already showed this arrival (section 11), drop that automatic entry so it is not counted twice
+    delete from public.purchase_order_lines pl using public.purchase_orders spo
+    where spo.id = pl.po_id and spo.source = 'shopify' and spo.vendor_id = vid and pl.item_key = k
+      and spo.sent_at > now() - interval '14 days' and pl.qty <= (r->>'qty')::numeric::int;
+    update public.purchase_order_lines pl set qty = pl.qty - (r->>'qty')::numeric::int, qty_received = greatest(pl.qty_received - (r->>'qty')::numeric::int, 0)
+    from public.purchase_orders spo
+    where spo.id = pl.po_id and spo.source = 'shopify' and spo.vendor_id = vid and pl.item_key = k
+      and spo.sent_at > now() - interval '14 days' and pl.qty > (r->>'qty')::numeric::int;
     -- the vendor carries it, at this cost
     insert into public.vendor_offers as o (vendor_id, item_key, unit_cost, source, updated_at)
     values (vid, k, case when r->>'cost' ~ '^\d+(\.\d+)?$' then (r->>'cost')::numeric end, 'receiving', now())
@@ -778,3 +788,116 @@ begin
 end $$;
 revoke all on function public.purchase_history(text, int) from public, anon;
 grant execute on function public.purchase_history(text, int) to authenticated;
+
+-- 11. Automatic check-in from Shopify.
+--   When Shopify's on-hand count for an item goes up (scanned in at the register, Faire's app, a Shopify import),
+--   the increase is matched to that item on open orders (sent or confirmed, oldest first) and counted as received.
+--   An order with every line received becomes "received" by itself. Staff only flag what came short or damaged.
+--   Runs every 15 minutes, right after the Shopify sync. The first run only takes a starting count.
+alter table public.purchase_order_lines add column if not exists qty_received int not null default 0;
+alter table public.purchase_order_lines add column if not exists received_at timestamptz;
+create table if not exists public.shopify_stock_seen (
+  item_key text primary key,
+  on_hand  int not null,
+  seen_at  timestamptz not null default now()
+);
+create table if not exists public.auto_receipts (
+  id       bigserial primary key,
+  po_id    uuid references public.purchase_orders(id) on delete cascade,
+  line_id  uuid references public.purchase_order_lines(id) on delete cascade,
+  item_key text not null,
+  qty      int not null,
+  at       timestamptz not null default now()
+);
+alter table public.shopify_stock_seen enable row level security;
+alter table public.auto_receipts enable row level security;
+revoke all on public.shopify_stock_seen, public.auto_receipts from anon, authenticated;
+
+create or replace function public.auto_receive_from_shopify() returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r record; l record; left_qty int; take int; n_items int := 0; n_units int := 0; first_run boolean;
+begin
+  if coalesce(auth.jwt() ->> 'email','') <> '' and public.role_rank(public.my_role()) < 3 then raise exception 'manager-only'; end if;
+  first_run := not exists (select 1 from public.shopify_stock_seen);
+  for r in
+    select k, now_on_hand, coalesce(s.on_hand, now_on_hand) as before from (
+      select public.shopify_item_key(sv.barcode, sv.sku) as k, sum(greatest(coalesce(sv.on_hand,0),0))::int as now_on_hand
+      from public.shopify_variants sv group by 1) cur
+    left join public.shopify_stock_seen s on s.item_key = cur.k
+    where cur.k is not null
+  loop
+    if not first_run and r.now_on_hand > r.before then
+      left_qty := r.now_on_hand - r.before;
+      for l in
+        select pl.id, pl.po_id, pl.qty - pl.qty_received as open_qty
+        from public.purchase_order_lines pl join public.purchase_orders po on po.id = pl.po_id
+        where pl.item_key = r.k and po.status in ('sent','confirmed') and pl.qty_received < pl.qty
+        order by po.sent_at nulls last, po.created_at
+      loop
+        exit when left_qty <= 0;
+        take := least(left_qty, l.open_qty);
+        update public.purchase_order_lines set qty_received = qty_received + take, received_at = now() where id = l.id;
+        insert into public.auto_receipts (po_id, line_id, item_key, qty) values (l.po_id, l.id, r.k, take);
+        left_qty := left_qty - take; n_units := n_units + take;
+      end loop;
+      if left_qty < r.now_on_hand - r.before then n_items := n_items + 1; end if;
+      -- Stock that arrived with no order here (bought on Faire, Amazon or a portal, then received into Shopify):
+      -- recorded as a purchase from the vendor the item is linked to, at the Shopify cost, one record per vendor per day.
+      if left_qty > 0 then
+        select a.vendor_id, (select max(sc.cost) from public.shopify_variants sv2 join public.shopify_costs sc on sc.inventory_item_id = sv2.inventory_item_id
+                              where public.shopify_item_key(sv2.barcode, sv2.sku) = r.k) as cost,
+               (select max(sv3.price) from public.shopify_variants sv3 where public.shopify_item_key(sv3.barcode, sv3.sku) = r.k) as price
+          into l
+        from public.shopify_variants sv join public.vendor_aliases a on lower(a.shopify_vendor) = lower(trim(sv.vendor))
+        where public.shopify_item_key(sv.barcode, sv.sku) = r.k limit 1;
+        if l.vendor_id is not null then
+          declare apo uuid;
+          begin
+            select id into apo from public.purchase_orders where vendor_id = l.vendor_id and source = 'shopify' and sent_at::date = current_date limit 1;
+            if apo is null then
+              insert into public.purchase_orders (vendor_id, status, method, sent_at, source, notes)
+              values (l.vendor_id, 'received', 'marketplace', now(), 'shopify', 'Arrivals seen in Shopify with no order in the app')
+              returning id into apo;
+            end if;
+            insert into public.purchase_order_lines as pl (po_id, item_key, qty, qty_received, received_at, unit_cost, store_price, note)
+            values (apo, r.k, left_qty, left_qty, now(), nullif(l.cost,0), l.price, 'Arrived in Shopify')
+            on conflict (po_id, item_key) do update set qty = pl.qty + excluded.qty, qty_received = pl.qty_received + excluded.qty_received;
+            insert into public.auto_receipts (po_id, item_key, qty) values (apo, r.k, left_qty);
+            n_units := n_units + left_qty;
+          end;
+        end if;
+      end if;
+    end if;
+    insert into public.shopify_stock_seen (item_key, on_hand, seen_at) values (r.k, r.now_on_hand, now())
+    on conflict (item_key) do update set on_hand = excluded.on_hand, seen_at = excluded.seen_at;
+  end loop;
+  -- orders whose every line has arrived are received
+  update public.purchase_orders po set status = 'received', updated_at = now()
+  where po.status in ('sent','confirmed')
+    and exists (select 1 from public.purchase_order_lines pl where pl.po_id = po.id)
+    and not exists (select 1 from public.purchase_order_lines pl where pl.po_id = po.id and pl.qty_received < pl.qty);
+  return jsonb_build_object('first_run', first_run, 'items', n_items, 'units', n_units);
+end $$;
+revoke all on function public.auto_receive_from_shopify() from public, anon;
+grant execute on function public.auto_receive_from_shopify() to authenticated;
+
+-- Managers can correct a line by hand (short, damaged, or counted elsewhere).
+create or replace function public.set_line_received(p_line uuid, p_qty int) returns void
+language plpgsql security definer set search_path = public as $$
+declare po uuid;
+begin
+  if public.role_rank(public.my_role()) < 2 then raise exception 'lead-only'; end if;
+  update public.purchase_order_lines set qty_received = greatest(0, least(coalesce(p_qty,0), 9999)), received_at = now() where id = p_line returning po_id into po;
+  if po is null then raise exception 'unknown line'; end if;
+  update public.purchase_orders p set status = case when not exists (select 1 from public.purchase_order_lines x where x.po_id = p.id and x.qty_received < x.qty) then 'received' else p.status end, updated_at = now()
+  where p.id = po and p.status in ('sent','confirmed','received');
+end $$;
+revoke all on function public.set_line_received(uuid, int) from public, anon;
+grant execute on function public.set_line_received(uuid, int) to authenticated;
+
+do $$ begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.unschedule(jobid) from cron.job where jobname = 'auto-receive';
+    perform cron.schedule('auto-receive', '3-59/15 * * * *', 'select public.auto_receive_from_shopify()');
+  end if;
+end $$;

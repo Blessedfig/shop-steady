@@ -86,3 +86,10 @@ Until then the button opens your own email app addressed to you.
 | Penguin Random House | ONIX title feed and daily in-stock feed by SFTP after their data-feed form. Orders: paste or upload in Self-Service, or EDI through Pubnet. |
 | Hachette, Simon & Schuster, IPG | ONIX feeds on request; EDI through Pubnet once you have terms accounts. |
 | Bookazine, Lunar | Their portals and CSV forms; import the files. |
+
+## Automatic check-in
+Every 15 minutes, right after the Shopify sync, the app compares each item's on-hand count in Shopify with the last count it saw.
+- **Stock went up for an item on an open order** (sent or confirmed): that many copies count as received on the oldest open order. When every line is in, the order becomes *received*, and the matching Receiving shipment fills itself in. Staff only fix what came short or damaged (Orders > the line > "Short, damaged or counted wrong?").
+- **Stock went up with no order in the app** (bought on Faire, Amazon or a portal and received into Shopify): it is recorded in Purchase history as an arrival from the vendor that item is linked to, at the Shopify cost. One record per vendor per day.
+  If the same shipment is later checked in under Receiving, the automatic entry is replaced, so nothing is counted twice.
+- Limits: the app sees the *net* change every 15 minutes, so a sale in the same window hides that many arrivals. A stock-count correction or customer return that raises stock is recorded as an arrival too; fix it from Purchase history if that happens.

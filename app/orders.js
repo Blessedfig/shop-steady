@@ -57,6 +57,18 @@
     } finally { btn.disabled = false; }
   }
 
+  // Arrivals counted automatically (Shopify stock went up for an item on an open order) fill in the matching
+  // Receiving shipment, so nobody has to tick them off by hand. Staff only fix shorts and damage.
+  function syncReceiving(orders){
+    const rec = A.state().receiving; if (!Array.isArray(rec)) return;
+    let changed = false;
+    orders.forEach(o => { const x = rec.find(r => r.po === o.po_number && r.status !== 'done'); if (!x) return;
+      o.lines.forEach(l => { const ln = x.lines.find(y => String(y.code).replace(/[^0-9A-Za-z]/g,'') === code(l).replace(/[^0-9A-Za-z]/g,''));
+        if (ln && (l.qty_received || 0) > (ln.got || 0)){ ln.got = l.qty_received; changed = true; } });
+      if (changed && x.status === 'ordered') x.status = 'arrived'; });
+    if (changed) A.save();
+  }
+
   function lineRow(o, l, draft){
     const [label, tone] = AV[l.availability] || AV.unknown;
     const row = h('div',{class:'item'},
@@ -69,7 +81,16 @@
       const save = h('button',{class:'btn quiet sm', type:'button', onclick:async () => { try { await rpc('set_order_line', {p_line:l.id, p_qty:+q.value || 0, p_note:null}); toast(+q.value ? 'Saved' : 'Removed'); A.route(); } catch(e){ toast(e.message === 'manager-only' ? 'A manager can change lines others added' : e.message); } }}, 'Save quantity');
       const del = h('button',{class:'btn quiet sm', type:'button', onclick:async () => { try { await rpc('set_order_line', {p_line:l.id, p_qty:0, p_note:null}); toast('Removed'); A.route(); } catch(e){ toast(e.message === 'manager-only' ? 'A manager can remove lines others added' : e.message); } }}, 'Remove');
       row.append(h('div',{class:'row'}, h('label',{class:'small'}, 'Qty '), q, save, del, o.vendor.stock_check_url ? h('a',{class:'btn quiet sm', target:'_blank', rel:'noopener', href:o.vendor.stock_check_url.replace('{isbn}', code(l)).replace('{q}', encodeURIComponent(l.title)), 'aria-label':'Check stock of ' + l.title + ' at ' + o.vendor.name + ' (opens their site)'}, 'Check stock') : null));
-    } else row.append(h('p',{class:'small'}, 'Qty ' + l.qty));
+    } else {
+      const got = l.qty_received || 0, done = got >= l.qty;
+      row.append(h('div',{class:'row small'}, h('span',{class:'chip ' + (done ? 'calm' : got ? 'amber' : 'grey')}, got + ' of ' + l.qty + ' received'),
+        l.received_at ? h('span',{class:'muted'}, 'checked in ' + A.fmtDate(String(l.received_at).slice(0,10))) : null));
+      if ((RANK[A.state().tier] || 0) >= 2 && ['sent','confirmed','received'].includes(o.status)){
+        const q = h('input',{type:'number', min:'0', max:'9999', value:String(got), 'aria-label':'Copies of ' + l.title + ' that arrived', style:'max-width:6rem'});
+        row.append(h('details',null, h('summary',{class:'small'},'Short, damaged or counted wrong?'), h('div',{class:'row'}, h('label',{class:'small'},'Arrived in good shape '), q,
+          h('button',{class:'btn quiet sm', type:'button', onclick:async () => { try { await rpc('set_line_received', {p_line:l.id, p_qty:+q.value || 0}); toast('Saved'); A.route(); } catch(e){ toast(e.message); } }}, 'Save'))));
+      }
+    }
     return row;
   }
 
@@ -129,6 +150,7 @@
     try { orders = await rpc('list_orders', {p_status:null}); }
     catch(e){ box.replaceChildren(h('p',{class:'msg err'}, /list_orders|schema cache/.test(e.message) ? 'Ordering is not set up yet. The owner needs to run the latest supabase/catalog.sql in Supabase.' : e.message)); return; }
     box.replaceChildren();
+    syncReceiving(orders);
     if (!orders.length) box.append(h('div',{class:'card'}, h('p',null,'No orders yet. Find a title in '), h('a',{href:'#/titles'},'Title search'), h('p',{class:'small muted'},' and press Add to order next to the vendor you want.')));
     if (isMgr()) box.append(await reorderCard());
     const drafts = orders.filter(o => o.status === 'draft'), rest = orders.filter(o => o.status !== 'draft' && o.lines.length);
