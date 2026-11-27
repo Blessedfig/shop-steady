@@ -76,6 +76,15 @@ import { createClient } from "npm:@supabase/supabase-js@2";
     const n = m ? Number(m[1]) : 0;
     return n >= 2 && n <= 144 ? n : null;
   }
+  // A case or display sold as one item: "24ct Display", "12ct", "Display of 6", "144 Sticks", "Case of 12".
+  // Not "Set of 3" (sets are sold as sets) and not piece counts ("1000 Piece" puzzles).
+  function caseCount(text) {
+    const s = String(text || '').toLowerCase();
+    const m = s.match(/\b(?:case|box|display|tray|carton|caddy|pack)\s+of\s+(\d{1,3})\b/) || s.match(/\b(\d{1,3})\s*[- ]?\s*(?:ct|count|pk|sticks|bars|packets|units?)\b/)
+      || s.match(/\bcase\s*\/\s*(\d{1,3})\b/);
+    const n = m ? Number(m[1]) : 0;
+    return n >= 2 && n <= 500 ? n : null;
+  }
   const norm = s => String(s || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
   const titleKey = (p, o) => norm(p + (o && !/^default( title)?$/i.test(o) ? ' ' + o : ''));
   const isFaire = (v, ctx) => /(^|[\s,])faire([\s,]|$)/i.test(v.tags || '') || !!(ctx.faireBrands && ctx.faireBrands.has(norm(v.vendor)));
@@ -111,10 +120,12 @@ import { createClient } from "npm:@supabase/supabase-js@2";
     'cost-case-total':   { kind: 'cost', label: 'Case total to cost per item', what: 'The cost in Shopify is the whole line or case from the Faire order. Divided by the units in it.' },
     'cost-differs-faire':{ kind: 'cost', label: 'Cost differs from the last Faire order', what: 'Shopify\'s cost does not match what the latest Faire order paid for each one.' },
     'cost-pack-size':    { kind: 'cost', label: 'Pack size in the name', what: 'Cost is at or above the selling price and the name says how many are in the pack, so the cost is likely for the whole pack.' },
-    'cost-keystone-multiple': { kind: 'cost', label: 'Cost is a multiple of the case', what: 'Cost is exactly 2, 4, 6... times half the retail price, the usual sign of a case total for a Faire item.' },
+    'cost-keystone-multiple': { kind: 'cost', label: 'Cost is a multiple of the case', what: 'Cost is exactly 3, 4, 6... times half the retail price, the usual sign of a case total for a Faire item.' },
     'cost-estimate':     { kind: 'cost', label: 'Estimated Faire cost', what: 'Faire brands usually sell to stores at half of retail. Only an estimate; a Faire order export makes it exact.' },
     'price-from-faire':  { kind: 'price', label: 'Retail price from Faire', what: 'No selling price in Shopify; the Faire order lists the brand\'s suggested retail price.' },
     'price-case-total':  { kind: 'price', label: 'Case retail to one item', what: 'The selling price is the retail of the whole case, not one item.' },
+    'case-in-name':      { kind: 'price', label: 'Whole case sold as one item', what: 'The name says a case or display (24ct, Display of 6, 144 sticks) and the price is for all of it, so one piece would ring up at the case price. Splits price and cost per piece; count the stock too.' },
+    'case-in-name-cost': { kind: 'cost', label: 'Whole case cost on one item', what: 'Goes with "Whole case sold as one item": the cost of the case divided by the pieces in it.' },
     'price-keystone':    { kind: 'price', label: 'Price at twice cost', what: 'No selling price; suggests twice the cost per item (keystone), the usual Faire retail price.' },
     'type-book':         { kind: 'type', label: 'Product type for books', what: 'An ISBN but no product type; uses the type most of your books already have.' },
     'tracking-on':       { kind: 'tracked', label: 'Track stock for Faire items', what: 'Faire items with stock tracking off show as always available and never come up for reorder.' },
@@ -185,11 +196,24 @@ import { createClient } from "npm:@supabase/supabase-js@2";
       if (bc && bc.valid && (seen.get(bc.code) || []).some(o => o.product_id !== v.product_id))
         add('check-duplicate', v.barcode, null, 'medium', 'Another product has the same barcode (' + seen.get(bc.code).filter(o => o.product_id !== v.product_id).map(o => o.product_title).slice(0, 2).join('; ') + '). The register may ring up the wrong one. Merge them or fix one.');
 
-      // ---------- cost ----------
+      // ---------- a whole case or display priced as one item (no Faire order on file to say otherwise) ----------
       const price = num(v.price), cost = num(v.cost);
-      let unitCost = cost && cost > 0 ? cost : null;
+      const caseN = !line && faire ? caseCount(name) : null;
+      const onHand = num(v.on_hand) || 0;
+      const caseWhole = caseN && price && price / caseN >= 0.5 && (price >= 30 || (price >= 15 && onHand < caseN));
+      if (caseWhole) {
+        const stock = onHand > 0 && onHand < caseN ? ' Shopify shows ' + onHand + ' on hand; if those are unopened cases you have about ' + onHand * caseN + ' pieces, so count them.' : '';
+        const twin = bc && bc.valid && (seen.get(bc.code) || []).find(o => o.variant_id !== v.variant_id && num(o.price) && num(o.price) < price / 2);
+        const dup = twin ? ' You already sell it one at a time as "' + twin.product_title + '" at $' + money(num(twin.price)) + ' with the same barcode, so the simpler fix is to move this stock there and archive this listing.' : '';
+        add('case-in-name', money(price), money(price / caseN), 'medium', 'The name says ' + caseN + ' to a case and the price $' + money(price) + ' is for all ' + caseN + '. One costs $' + money(price / caseN) + ' at the same markup.' + stock + dup);
+        if (cost) add('case-in-name-cost', money(cost), money(cost / caseN), 'medium', 'The $' + money(cost) + ' cost is for the case of ' + caseN + ', so $' + money(cost / caseN) + ' each.');
+      }
+
+      // ---------- cost ----------
+      let unitCost = cost && cost > 0 ? (caseWhole ? cost / caseN : cost) : null;
       const fUnit = line ? unitCostOf(line) : null;
-      if (fUnit) {
+      if (caseWhole) { /* handled above */ }
+      else if (fUnit) {
         const units = num(line.units) || 0, total = num(line.line_total);
         if (!cost) { add('cost-from-faire', cost, money(fUnit), 'high', 'Faire order ' + (line.order_no || '') + (line.day ? ' (' + line.day + ')' : '') + ': ' + (units ? units + ' for ' + (total != null ? '$' + money(total) : '') + ', ' : '') + '$' + money(fUnit) + ' each.', lineEv); unitCost = fUnit; }
         else if (!near(cost, fUnit, 0.01)) {
@@ -201,17 +225,19 @@ import { createClient } from "npm:@supabase/supabase-js@2";
         }
       } else if (cost && price && price > 0 && cost >= price * 0.9) {
         const n = packSize(name), k = Math.round(cost / (price / 2));
-        if (n && cost / n < price) { add('cost-pack-size', money(cost), money(cost / n), 'medium', 'Cost $' + money(cost) + ' is at or above the price $' + money(price) + ', and the name says ' + n + ' in the pack. $' + money(cost / n) + ' each.'); unitCost = cost / n; }
-        else if (k >= 2 && k <= 144 && near(cost, k * price / 2, 0.02)) { add('cost-keystone-multiple', money(cost), money(cost / k), 'medium', 'Cost $' + money(cost) + ' is exactly ' + k + ' × $' + money(price / 2) + ' (half the $' + money(price) + ' retail), so it looks like the total for ' + k + ' units.'); unitCost = cost / k; }
+        if (n && cost >= price * 1.5 && cost / n < price) { add('cost-pack-size', money(cost), money(cost / n), 'medium', 'Cost $' + money(cost) + ' is at or above the price $' + money(price) + ', and the name says ' + n + ' in the pack. $' + money(cost / n) + ' each.'); unitCost = cost / n; }
+        else if (faire && k >= 3 && k <= 144 && near(cost, k * price / 2, 0.02)) { add('cost-keystone-multiple', money(cost), money(cost / k), 'medium', 'Cost $' + money(cost) + ' is exactly ' + k + ' × $' + money(price / 2) + ' (half the $' + money(price) + ' retail), so it looks like the total for ' + k + ' units.'); unitCost = cost / k; }
         else if (faire) { add('cost-estimate', money(cost), money(price / 2), 'low', 'Cost $' + money(cost) + ' is at or above the $' + money(price) + ' price. Faire items usually cost half of retail; a Faire order export makes this exact.'); unitCost = price / 2; }
-        else { add('check-cost', money(cost), null, 'medium', 'Cost $' + money(cost) + ' is at or above the selling price $' + money(price) + '. Check the invoice.'); unitCost = null; }
+        else if (cost > price) { add('check-cost', money(cost), null, 'medium', 'Cost $' + money(cost) + ' is at or above the selling price $' + money(price) + '. Check the invoice.'); unitCost = null; }
+        else if (cost === price && faire) add('check-cost', money(cost), null, 'medium', 'Cost and price are both $' + money(price) + ', so it sells with no margin. One of them is wrong; check the Faire invoice.');
       } else if (!cost && faire && price && price > 0) {
         add('cost-estimate', cost, money(price / 2), 'low', 'No cost. Faire items usually cost half of the $' + money(price) + ' retail; a Faire order export makes this exact.');
       }
 
       // ---------- price ----------
       const msrp = line ? num(line.msrp) : null;
-      if (msrp && msrp > 0) {
+      if (caseWhole) { /* handled above */ }
+      else if (msrp && msrp > 0) {
         const k = price ? Math.round(price / msrp) : 0;
         if (!price) add('price-from-faire', v.price, money(msrp), 'high', 'No selling price; the brand\'s suggested retail on Faire is $' + money(msrp) + '.', lineEv);
         else if (k >= 2 && near(price, msrp * k, 0.02)) add('price-case-total', money(price), money(msrp), 'high', 'The price $' + money(price) + ' is ' + k + ' × the suggested retail of one ($' + money(msrp) + ').', lineEv);
@@ -278,7 +304,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
     return rows;
   }
 
-  const api = { readCode, isbn10to13, gtinValid, isbn10Valid, packSize, codeInText, scan, RULES, FIELDS, guessColumns, faireRows, parseCsv, norm };
+  const api = { readCode, isbn10to13, gtinValid, isbn10Valid, packSize, caseCount, codeInText, scan, RULES, FIELDS, guessColumns, faireRows, parseCsv, norm };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.FixRules = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

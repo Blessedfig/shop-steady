@@ -74,6 +74,23 @@ t('faire without an order export', () => {
   assert.deepEqual(rules(R.scan([V({ tags: 'Faire', tracked: false })])), ['tracking-on:true']);
   assert.deepEqual(rules(R.scan([V({ cost: 23, price: 20, status: 'ARCHIVED' })])), []);
 });
+t('whole case priced as one item', () => {
+  const pop = V({ product_title: "Grandpa Joe's Candy Shop - Pop Rocks Mystery Flavor Popping Candy .33oz, 24ct Display", price: 37.8, cost: 18.9, on_hand: 1, tags: 'Faire' });
+  assert.deepEqual(rules(R.scan([pop])), ['case-in-name-cost:0.79', 'case-in-name:1.58']);
+  assert.ok(R.scan([pop])[0].reason.includes('about 24 pieces'));
+  assert.deepEqual(rules(R.scan([V({ product_title: 'Mythical Meats - Restock Pack - 144 Sticks', price: 432, cost: 244.16, on_hand: 1, tags: 'Faire' })])), ['case-in-name-cost:1.70', 'case-in-name:3.00']);
+  assert.deepEqual(rules(R.scan([V({ product_title: 'Fra-Gee-Lay Candy Filled Crate, 12ct', price: 45.34, cost: 22.67, on_hand: 13, tags: 'Faire' })])), ['case-in-name-cost:1.89', 'case-in-name:3.78']);
+  const twin = R.scan([V({ product_title: 'Demon Slayer Melon Mochi, 120g bag, 12ct', barcode: '602772896654', price: 77.5, cost: 38.75, on_hand: 1, tags: 'Faire' }),
+    V({ product_title: 'Demon Slayer Melon Mochi (single)', barcode: '602772896654', price: 6.28, cost: 3, on_hand: 34 })]).find(p => p.rule === 'case-in-name');
+  assert.ok(twin.reason.includes('archive this listing'));
+  // already split: priced per piece, lots on hand
+  assert.deepEqual(rules(R.scan([V({ product_title: 'Meiji Chocorooms 5oz Bag, 12ct', price: 9, cost: 3.8, on_hand: 34, tags: 'Faire' })])), []);
+  assert.deepEqual(rules(R.scan([V({ product_title: 'Mast General Choc Bar - Trash Panda, 1.5oz, 12ct', price: 5.46, cost: 2.73, on_hand: 7, tags: 'Faire' })])), []);
+  // sets and puzzles are sold whole
+  assert.deepEqual(rules(R.scan([V({ product_title: 'Magic Toadstool Mushrooms Decor Set of 3', price: 62.5, cost: 25, on_hand: 2, tags: 'Faire' })])), []);
+  assert.deepEqual(rules(R.scan([V({ product_title: 'Bleach 1000-Piece Jigsaw Puzzle', price: 25, cost: 12.5, on_hand: 2, tags: 'Faire' })])), []);
+  assert.deepEqual(rules(R.scan([V({ product_title: 'Canvas Shopper Bag - Owls (CASE PACK OF 5)', price: 19, cost: 9.5, on_hand: 5, tags: 'Faire' })])), []);
+});
 t('csv import', () => {
   const csv = 'Order Number,Order Date,Brand Name,Product Name,Option,SKU,Quantity,Case Size,Wholesale Price,Retail Price,Total\n"F-77","2026-10-03","Paper Co","Fox Notebook","",PC-FOX,2,6,30.00,10.00,60.00\n';
   const rows = R.parseCsv(csv); const map = R.guessColumns(rows[0]);
