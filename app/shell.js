@@ -68,7 +68,18 @@
     const st = modState(m); return st.on && st.tiers.includes(S.tier); };
   const listed = v => viewOn(v) && !VIEWS[v].hidden;
 
+  // The first level (Bookseller) gets a simple app: a few big buttons, no side menu, no level switcher.
+  const SIMPLE = [['checklists','✅','Today\'s checklist'],['till','💵','Cash drawer'],['schedule','📅','My schedule and pay'],
+                  ['teamvoice','💬','Message the owner'],['custvoice','🗣️','A customer asked'],['cashtrain','🎓','Cash training']];
+  const simple = () => S.tier === 'staff';
+  function simpleHome(v){
+    const name = (window.SSApp.myName || '').split(/[ @]/)[0];
+    v.append(h('h1',{class:'simplehi'}, name ? 'Hi, '+name : 'Hi!'));
+    v.append(h('div',{class:'bigtiles'}, SIMPLE.filter(([k]) => VIEWS[k] && viewOn(k)).map(([k,ic,t]) => h('a',{class:'tile big',href:'#/'+k}, h('span',{class:'ic','aria-hidden':'true'},ic), h('b',null,t)))));
+    if (VIEWS.kiosk && viewOn('kiosk')) v.append(h('p',{class:'small muted'},'Clock in and out on the store tablet.'));
+  }
   R.home = v => {
+    if (simple()) return simpleHome(v);
     v.append(head(site().name+' · '+btype().name, 'Good to see you', 'Pick what you need. Owners can turn modules on or off for each role under Modules.'));
     const g = h('div',{class:'grid g3'});
     Object.keys(VIEWS).filter(k => k !== 'home' && listed(k)).forEach(k => g.append(h('a',{class:'tile',href:'#/'+k}, h('span',{class:'ic','aria-hidden':'true'},VIEWS[k].ic), h('b',null,VIEWS[k].t))));
@@ -120,7 +131,11 @@
     param = m && m[2] ? decodeURIComponent(m[2]) : '';
     renderNav(current);
     const main = $('main'); main.textContent = '';
-    const view = h('div',{class:'view'}); (R[current] || R.home)(view); main.append(view);
+    document.body.classList.toggle('simple', simple());
+    document.body.classList.toggle('stafflogin', window.SSApp.myRole === 'staff');
+    const view = h('div',{class:'view'});
+    if (simple() && current !== 'home') view.append(h('a',{class:'btn ghost sm backhome',href:'#/home'},'← Home'));
+    (R[current] || R.home)(view); main.append(view);
     window.scrollTo(0,0);
   }
   window.addEventListener('hashchange', () => { if (!$('app').hidden) route(); });
