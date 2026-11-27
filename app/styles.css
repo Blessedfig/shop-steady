@@ -225,3 +225,13 @@ mark.flag{background:var(--amber-soft);color:var(--ink);border-bottom:2px solid 
 
 .rule ol,.card ol,.card ul{margin:0;padding-left:1.25rem;display:grid;gap:.3rem}
 .foot{font-size:.78rem;color:var(--muted)}
+
+/* store mode (shared tablet): no menus, big PIN pad */
+body.kiosk .top, body.kiosk nav.side{display:none}
+body.kiosk .shell{grid-template-columns:1fr}
+.kioskcard{max-width:420px}
+.pinpad{display:grid;gap:1rem;justify-items:center}
+.pinout{font:800 1.6rem/1.2 var(--display);letter-spacing:.3em;min-height:2.2rem;color:var(--ink)}
+.pinkeys{display:grid;grid-template-columns:repeat(3,72px);gap:.75rem}
+.pinkeys .btn{min-height:64px;font-size:1.3rem;padding:0}
+textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:.6rem .7rem;background:var(--bg)}
