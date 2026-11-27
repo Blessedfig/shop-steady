@@ -14,9 +14,9 @@ window.APP_DATA = {
   // Add a type by copying one of these. "modules" lists the module ids that start switched on for that type.
   BUSINESS_TYPES: {
     bookstore: {name:'Bookstore', tiers:{staff:'Bookseller', lead:'Shift lead', manager:'Store manager', owner:'Owner'},
-      items:'titles', usesIsbn:true, modules:['shifts','voice','count','people','notes','taxlog','inventory','expenses','setup','logins']},
+      items:'titles', usesIsbn:true, modules:['shifts','voice','count','people','catalog','notes','taxlog','inventory','expenses','setup','logins']},
     retail:    {name:'Retail shop', tiers:{staff:'Sales associate', lead:'Shift lead', manager:'Store manager', owner:'Owner'},
-      items:'products', usesIsbn:false, modules:['shifts','voice','count','people','notes','taxlog','inventory','expenses','setup','logins']},
+      items:'products', usesIsbn:false, modules:['shifts','voice','count','people','catalog','notes','taxlog','inventory','expenses','setup','logins']},
     cafe:      {name:'Café or food counter', tiers:{staff:'Barista', lead:'Shift lead', manager:'Manager', owner:'Owner'},
       items:'supplies', usesIsbn:false, modules:['shifts','voice','count','people','notes','taxlog','inventory','expenses','setup','logins']},
     services:  {name:'Services or rentals', tiers:{staff:'Team member', lead:'Lead', manager:'Manager', owner:'Owner'},
