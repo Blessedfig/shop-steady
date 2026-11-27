@@ -5,8 +5,10 @@
 //            1. Products and stock: a Shopify bulk export of every variant (title, codes, vendor, price, cost,
 //               available, on hand). It runs on Shopify's side; a later run collects it. Repeats hourly.
 //            2. Sales: orders changed since the last run (Shopify allows the last 60 days), line by line.
-//   apply  (owner only): sends pending cost and vendor changes from shopify_changes to Shopify, one by one,
-//          and records what happened.
+//   apply  (owner only): sends pending changes (cost, vendor, barcode, price, product type, stock tracking) from
+//          shopify_changes to Shopify, one by one, and records what happened.
+//   apply-auto (the product-fix timer, header x-sync-key): sends only changes made by a product-fix rule the owner
+//          switched to automatic (see supabase/product-fix.sql).
 // The access token lives only in shopify_conn (see supabase/shopify.sql) and in this function's memory.
 // "Verify JWT with legacy secret" must be OFF: the timer has no sign-in; this code checks the key or the person.
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -24,7 +26,7 @@ const num = (gid: string | null | undefined) => gid ? Number(String(gid).split("
 const sameText = (a: string, b: string) => { if (a.length !== b.length) return false; let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i); return d === 0; };
 
 const BULK = `{ productVariants { edges { node { id title sku barcode price
-  product { id title vendor productType status }
+  product { id title vendor productType status tags }
   inventoryItem { id tracked unitCost { amount }
     inventoryLevels { edges { node { location { id } quantities(names: ["available", "on_hand"]) { name quantity } } } } } } } } }`;
 const ORDERS = `query($q: String, $after: String) { shop { ianaTimezone }
@@ -74,11 +76,21 @@ Deno.serve(async (req) => {
   }
 
   // ---------- apply approved changes (owner) ----------
-  if (action === "apply") {
-    if (role !== "owner") return json({ error: "owner-only" }, 403);
-    const ids: number[] = Array.isArray(body.ids) ? body.ids.map(Number).filter(Boolean).slice(0, 200) : [];
-    let q = admin.from("shopify_changes").select("*").eq("status", "pending").in("kind", ["cost", "vendor"]).order("id").limit(200);
-    if (ids.length) q = q.in("id", ids);
+  if (action === "apply" || action === "apply-auto") {
+    const KINDS = ["cost", "vendor", "barcode", "price", "type", "tracked"];
+    let q = admin.from("shopify_changes").select("*").eq("status", "pending").in("kind", KINDS).order("id").limit(200);
+    if (action === "apply") {
+      if (role !== "owner") return json({ error: "owner-only" }, 403);
+      const ids: number[] = Array.isArray(body.ids) ? body.ids.map(Number).filter(Boolean).slice(0, 200) : [];
+      if (ids.length) q = q.in("id", ids);
+    } else {
+      if (who !== "timer") return json({ error: "timer-only" }, 403);
+      const { data: on } = await admin.from("product_fix_rules").select("rule").eq("auto", true);
+      const rules = (on ?? []).map((r) => r.rule);
+      if (!rules.length) return json({ applied: 0, failed: 0 });
+      q = q.in("auto_rule", rules);
+      who = "automatic rule";
+    }
     const { data: list } = await q;
     let done = 0, failed = 0;
     for (const c of list ?? []) {
@@ -86,7 +98,29 @@ Deno.serve(async (req) => {
       let err = "";
       try {
         if (!v) err = "That item is not in the synced product list.";
-        else if (c.kind === "cost") {
+        else if (c.kind === "barcode" || c.kind === "price") {
+          const val = String(c.new_value).trim();
+          if (c.kind === "price" && !(Number(val) > 0)) err = "Price must be more than 0.";
+          else if (c.kind === "barcode" && !/^[0-9A-Za-z-]{0,40}$/.test(val)) err = "That is not a barcode.";
+          else {
+            const d = await gql(`mutation($p: ID!, $v: [ProductVariantsBulkInput!]!) { productVariantsBulkUpdate(productId: $p, variants: $v) { userErrors { message } } }`,
+              { p: "gid://shopify/Product/" + v.product_id, v: [c.kind === "price" ? { id: "gid://shopify/ProductVariant/" + c.variant_id, price: Number(val).toFixed(2) } : { id: "gid://shopify/ProductVariant/" + c.variant_id, barcode: val }] });
+            err = (d.productVariantsBulkUpdate.userErrors ?? []).map((e: { message: string }) => e.message).join("; ");
+            if (!err) await admin.from("shopify_variants").update(c.kind === "price" ? { price: Number(val) } : { barcode: val }).eq("variant_id", c.variant_id);
+          }
+        } else if (c.kind === "type") {
+          const productType = String(c.new_value).trim().slice(0, 255);
+          const d = await gql(`mutation($p: ProductUpdateInput!) { productUpdate(product: $p) { userErrors { message } } }`,
+            { p: { id: "gid://shopify/Product/" + v.product_id, productType } });
+          err = (d.productUpdate.userErrors ?? []).map((e: { message: string }) => e.message).join("; ");
+          if (!err) await admin.from("shopify_variants").update({ product_type: productType }).eq("product_id", v.product_id);
+        } else if (c.kind === "tracked") {
+          const tracked = String(c.new_value) === "true";
+          const d = await gql(`mutation($id: ID!, $t: Boolean) { inventoryItemUpdate(id: $id, input: { tracked: $t }) { userErrors { message } } }`,
+            { id: "gid://shopify/InventoryItem/" + v.inventory_item_id, t: tracked });
+          err = (d.inventoryItemUpdate.userErrors ?? []).map((e: { message: string }) => e.message).join("; ");
+          if (!err) await admin.from("shopify_variants").update({ tracked }).eq("variant_id", c.variant_id);
+        } else if (c.kind === "cost") {
           const cost = Number(c.new_value);
           if (!(cost >= 0)) err = "Cost must be a number.";
           else {
@@ -106,7 +140,7 @@ Deno.serve(async (req) => {
       await admin.from("shopify_changes").update(err ? { status: "failed", error: err.slice(0, 300) } : { status: "applied", applied_by: who, applied_at: new Date().toISOString(), error: null }).eq("id", c.id);
       err ? failed++ : done++;
     }
-    await log("apply", failed === 0, `${done} applied, ${failed} failed, by ${who}`);
+    if (done || failed || action === "apply") await log(action, failed === 0, `${done} applied, ${failed} failed, by ${who}`);
     return json({ applied: done, failed });
   }
 
@@ -180,7 +214,7 @@ Deno.serve(async (req) => {
       const ii = o.inventoryItem ?? {};
       vars.set(o.id, { variant_id: num(o.id), product_id: num(o.product?.id), inventory_item_id: num(ii.id),
         product_title: o.product?.title ?? "", variant_title: o.title ?? "", sku: (o.sku ?? "").replace(/^'/, ""), barcode: o.barcode ?? "",
-        vendor: o.product?.vendor ?? "", product_type: o.product?.productType ?? "", status: o.product?.status ?? "",
+        vendor: o.product?.vendor ?? "", tags: (o.product?.tags ?? []).join(", "), product_type: o.product?.productType ?? "", status: o.product?.status ?? "",
         price: o.price == null ? null : Number(o.price), tracked: !!ii.tracked, available: 0, on_hand: 0, updated_at: new Date().toISOString() });
       if (ii.id) costs.set(num(ii.id)!, ii.unitCost?.amount == null ? null : Number(ii.unitCost.amount));
     }

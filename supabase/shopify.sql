@@ -79,7 +79,7 @@ create index if not exists shopify_order_lines_day on public.shopify_order_lines
 create index if not exists shopify_order_lines_variant on public.shopify_order_lines (variant_id);
 create table if not exists public.shopify_changes (
   id          bigint generated always as identity primary key,
-  kind        text not null check (kind in ('cost','vendor','stock')),
+  kind        text not null check (kind in ('cost','vendor','stock','barcode','price','type','tracked')),
   variant_id  bigint not null,
   old_value   text,
   new_value   text not null,
@@ -91,6 +91,12 @@ create table if not exists public.shopify_changes (
   applied_by  text,
   applied_at  timestamptz
 );
+-- added for the product fixer (product-fix.sql): more kinds, and which fix or automatic rule a change came from
+alter table public.shopify_changes drop constraint if exists shopify_changes_kind_check;
+alter table public.shopify_changes add constraint shopify_changes_kind_check check (kind in ('cost','vendor','stock','barcode','price','type','tracked'));
+alter table public.shopify_changes add column if not exists auto_rule text;
+alter table public.shopify_changes add column if not exists fix_id bigint;
+alter table public.shopify_variants add column if not exists tags text;
 create table if not exists public.shopify_sync_log (
   id    bigint generated always as identity primary key,
   at    timestamptz not null default now(),
@@ -107,7 +113,11 @@ alter table public.shopify_sync_log enable row level security;
 revoke all on public.shopify_variants, public.shopify_costs, public.shopify_order_lines, public.shopify_changes, public.shopify_sync_log from anon;
 revoke insert, update, delete on public.shopify_variants, public.shopify_costs, public.shopify_order_lines, public.shopify_sync_log from authenticated;
 grant select on public.shopify_variants, public.shopify_costs, public.shopify_order_lines, public.shopify_changes, public.shopify_sync_log to authenticated;
-grant insert, update on public.shopify_changes to authenticated;
+-- people in the app may only write these columns: they propose (kind, item, values, note) and drop (status).
+-- auto_rule and fix_id are set only by the server, so nobody can make their own change look approved.
+revoke insert, update on public.shopify_changes from authenticated;
+grant insert (kind, variant_id, old_value, new_value, note) on public.shopify_changes to authenticated;
+grant update (status) on public.shopify_changes to authenticated;
 
 drop policy if exists "members read variants" on public.shopify_variants;
 create policy "members read variants" on public.shopify_variants for select to authenticated using (public.is_desk_member());
@@ -123,7 +133,8 @@ drop policy if exists "managers read changes" on public.shopify_changes;
 create policy "managers read changes" on public.shopify_changes for select to authenticated using (public.role_rank(public.my_role()) >= 3);
 drop policy if exists "managers propose changes" on public.shopify_changes;
 create policy "managers propose changes" on public.shopify_changes for insert to authenticated
-  with check (public.role_rank(public.my_role()) >= 3 and status = 'pending' and applied_at is null);
+  with check (public.role_rank(public.my_role()) >= 3 and status = 'pending' and applied_at is null and auto_rule is null and fix_id is null
+              and kind in ('cost','vendor'));
 drop policy if exists "managers drop pending changes" on public.shopify_changes;
 create policy "managers drop pending changes" on public.shopify_changes for update to authenticated
   using (public.role_rank(public.my_role()) >= 3 and status = 'pending') with check (status in ('pending','dropped') and applied_at is null);
