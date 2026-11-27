@@ -110,13 +110,33 @@
   };
   const openPunch = n => punches().find(p => p.who === n && !p.out);
 
+  // ---------- workers under 16 (federal child labor rules, which Wisconsin follows) ----------
+  // Outside 7 AM to 7 PM (9 PM from June 1 to Labor Day); at most 3 hours on a school day and 18 in a school week;
+  // at most 8 hours on other days and 40 in other weeks. School days are taken as Monday to Friday, September to May.
+  // The schedule refuses shifts that break these; the person is marked "Under 16" on the Team screen.
+  const toMin = t => { const [a,b] = String(t||'0:0').split(':').map(Number); return a*60 + (b||0); };
+  function laborDay(y){ const d = new Date(y, 8, 1); while (d.getDay() !== 1) d.setDate(d.getDate()+1); return isoDay(d); }
+  const schoolDay = d => { const x = new Date(d+'T12:00:00'), m = x.getMonth(), w = x.getDay(); return w >= 1 && w <= 5 && (m >= 8 || m <= 4); };
+  function minorProblem(p, sh, list){
+    if (!p || !p.under16) return '';
+    const st = toMin(sh.start), en = toMin(sh.end), y = sh.date.slice(0,4), summer = sh.date >= y+'-06-01' && sh.date <= laborDay(+y);
+    if (en <= st) return p.n+' is under 16: shifts can\'t run past midnight.';
+    if (st < 7*60 || en > (summer ? 21 : 19)*60) return p.n+' is under 16: only between 7 AM and '+(summer ? '9' : '7')+' PM on '+A.fmtDate(sh.date)+'.';
+    const others = list.filter(x => x.who === p.n && x.id !== sh.id), dayMin = others.filter(x => x.date === sh.date).reduce((a,x) => a + shiftMin(x), 0) + (en - st);
+    if (dayMin > (schoolDay(sh.date) ? 3 : 8)*60) return p.n+' is under 16: at most '+(schoolDay(sh.date) ? '3 hours on a school day' : '8 hours a day')+'.';
+    const wk = weekStart(sh.date), days = [0,1,2,3,4,5,6].map(i => addDays(wk,i)), school = days.some(schoolDay);
+    const weekMin = others.filter(x => x.date >= wk && x.date < addDays(wk,7)).reduce((a,x) => a + shiftMin(x), 0) + (en - st);
+    if (weekMin > (school ? 18 : 40)*60) return p.n+' is under 16: at most '+(school ? '18 hours in a school week' : '40 hours a week')+'.';
+    return '';
+  }
+
   // ---------- hours and pay ----------
   function weekHours(site, wk){ // worked minutes per person for the week starting wk, from time clock punches
     const end = addDays(wk, 7), byWho = {};
     (X().punches[site]||[]).forEach(p => {
       const d = p.in.slice(0,10); if (d < wk || d >= end) return;
       const outAt = p.out ? new Date(p.out) : new Date();
-      const m = Math.max(0, Math.round((outAt - new Date(p.in))/60000) - (p.brk||0));
+      const m = Math.max(0, Math.round((outAt - new Date(p.in))/60000) - ((p.brk||0) >= 30 ? p.brk : 0)); // breaks under 30 minutes are paid time (Wisconsin)
       byWho[p.who] = (byWho[p.who]||0) + m;
     });
     return byWho;
@@ -168,7 +188,9 @@
         h('label',{class:'f'},'Who', h('select',{name:'who'}, h('option',{value:''},'Open shift (anyone can pick it up)'), team().filter(p=>p.tier!=='owner').map(p => h('option',{value:p.n},p.n)))),
         h('button',{class:'btn',type:'submit'},'Add shift'));
       f.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(f);
-        sched().push({id:uid(), date:d.get('date'), start:d.get('start'), end:d.get('end'), who:d.get('who')||null}); A.save(); toast('Shift added'); A.route(); });
+        const sh = {id:uid(), date:d.get('date'), start:d.get('start'), end:d.get('end'), who:d.get('who')||null};
+        const bad = sh.who && minorProblem(person(sh.who), sh, sched()); if (bad) return toast(bad);
+        sched().push(sh); A.save(); toast('Shift added'); A.route(); });
       v.append(f);
       // week totals against overtime
       const planned = {}; sched().filter(s => s.date >= wk && s.date < addDays(wk,7) && s.who).forEach(s => planned[s.who] = (planned[s.who]||0) + shiftMin(s));
@@ -178,7 +200,10 @@
           h('button',{class:'btn ghost sm',type:'button',onclick:()=>{ // copy last week's shifts into this week
             const prev = sched().filter(s => s.date >= addDays(wk,-7) && s.date < wk);
             if (!prev.length) return toast('Last week has no shifts to copy');
-            prev.forEach(s => sched().push(Object.assign({}, s, {id:uid(), date:addDays(s.date,7)}))); A.save(); toast('Copied '+prev.length+' shifts'); A.route(); }},'Copy last week'),
+            const skipped = [];
+            prev.forEach(s => { const sh = Object.assign({}, s, {id:uid(), date:addDays(s.date,7)}), bad = sh.who && minorProblem(person(sh.who), sh, sched());
+              if (bad) skipped.push(bad); else sched().push(sh); });
+            A.save(); toast('Copied '+(prev.length - skipped.length)+' shifts'+(skipped.length ? '. Skipped '+skipped.length+': '+skipped[0] : '')); A.route(); }},'Copy last week'),
           h('button',{class:'btn ghost sm',type:'button',onclick:()=>download('schedule-'+wk+'.ics','text/calendar', A.toIcs(sched().filter(s => s.date >= wk && s.date < addDays(wk,7)).map(s => ({id:s.id, date:s.date, time:s.start, dur:shiftMin(s), title:(s.who||'Open shift')+' · '+A.site().name, note:'Shift', link:'#/schedule'}))))},'Add week to calendars (.ics)'))));
     });
   }
@@ -197,6 +222,7 @@
             const r = await setPin(p, pin.trim()); if (r !== 'ok') return toast(r === 'taken' ? 'Someone already has that PIN' : r);
             A.save(); toast('PIN changed'); A.route(); }}, onServer() && pins && !pins.includes(p.id) ? 'Set a PIN' : 'Change PIN'),
           onServer() && pins && !pins.includes(p.id) ? h('span',{class:'chip amber'},'No PIN yet') : null,
+          p.tier !== 'owner' ? h('button',{class:'btn quiet sm',type:'button','aria-pressed':String(!!p.under16),onclick:()=>{ p.under16 = !p.under16; A.save(); toast(p.under16 ? p.n+' is marked under 16: the schedule keeps to the hour limits' : 'Under-16 limits off for '+p.n); A.route(); }}, p.under16 ? 'Under 16: yes' : 'Under 16: no') : null,
           p.tier !== 'owner' ? h('button',{class:'btn quiet sm',type:'button','aria-pressed':String(!!p.photoProof),onclick:()=>{ p.photoProof = !p.photoProof; A.save(); toast(p.photoProof ? 'Photo proof is on for '+p.n : 'Photo proof is off'); A.route(); }}, p.photoProof ? 'Photo proof: on' : 'Photo proof: off') : null,
           p.tier !== 'owner' ? h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ const r = prompt('Hourly pay for '+p.n, String(rateOf(p)||'')); if (r == null) return; const n = parseFloat(r); if (!(n >= 0)) return toast('Type a number'); setPay(p, 'rate', n); A.save(); A.route(); }},'Change pay') : null,
           p.tier !== 'owner' ? h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ const r = prompt('The email '+p.n+' signs in with, so they can see their own hours and pay (leave empty to unlink)', payOf(p).email||''); if (r == null) return; const em = r.trim().toLowerCase();

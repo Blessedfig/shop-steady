@@ -5,22 +5,18 @@
 --   hr        : each person's file: start date, paperwork checklist, reviews, coaching and write-ups.
 --               Store manager and owner only.
 --   decisions : decision planners (hire someone, add a category, change hours...). Store manager and owner only.
---   hrmed     : medical and accommodation notes, kept apart from the HR file. Owner only.
+--   Medical papers are kept out of the app on purpose (a separate locked folder).
 -- The app only shares these areas once this file has run (it asks the database first), so nothing private is
 -- ever saved where staff could read it.
 
 create or replace function public.private_doc(k text) returns boolean language sql immutable as $$
-  select k in ('pay','trips','writeoffs','costs','safe','staffnotes','hr','decisions','hrmed') $$;
-create or replace function public.owner_doc(k text) returns boolean language sql immutable as $$
-  select k in ('hrmed') $$;
+  select k in ('pay','trips','writeoffs','costs','safe','staffnotes','hr','decisions') $$;
 grant execute on function public.private_doc(text) to authenticated;
-grant execute on function public.owner_doc(text) to authenticated;
 
 drop policy if exists "members read app data" on public.app_docs;
 create policy "members read app data" on public.app_docs for select to authenticated
   using (public.is_desk_member()
-         and (not public.private_doc(key) or public.role_rank(public.my_role()) >= 3)
-         and (not public.owner_doc(key) or public.my_role() = 'owner'));
+         and (not public.private_doc(key) or public.role_rank(public.my_role()) >= 3));
 
 create or replace function public.save_doc(p_key text, p_data jsonb, p_base bigint) returns bigint
 language plpgsql security definer set search_path = public as $$
@@ -28,7 +24,6 @@ declare v bigint; who text := lower(coalesce(auth.jwt() ->> 'email',''));
 begin
   if not public.is_desk_member() then raise exception 'not-member'; end if;
   if p_key in ('setup','mods') and public.my_role() is distinct from 'owner' then raise exception 'owner-only'; end if;
-  if public.owner_doc(p_key) and public.my_role() is distinct from 'owner' then raise exception 'owner-only'; end if;
   if public.private_doc(p_key) and public.role_rank(public.my_role()) < 3 then raise exception 'manager-only'; end if;
   if p_key = 'shifts' then p_data := public.strip_pins(p_data); end if;          -- PINs live in desk_pins only
   if p_key = 'notes' then p_data := public.notes_split(p_data, false); end if;    -- employee notes live in staffnotes
@@ -44,4 +39,4 @@ end $$;
 revoke all on function public.save_doc(text,jsonb,bigint) from public, anon;
 grant execute on function public.save_doc(text,jsonb,bigint) to authenticated;
 
-select public.private_doc('hr') as hr_private, public.owner_doc('hrmed') as medical_owner_only;
+select public.private_doc('hr') as hr_private, public.private_doc('decisions') as decisions_private;

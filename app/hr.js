@@ -5,23 +5,22 @@
 //   - Reviews: strengths, what to work on, goals, and a follow-up date.
 //   - Coaching and write-ups: what happened, what is expected, next step, and whether the person was told and signed.
 //     Employee file notes from Notes show here too.
-//   - Medical and accommodation notes are kept in a separate area only the owner can open (supabase/hr.sql).
-// The file lives in the private shared areas 'hr' and 'hrmed'; until hr.sql has run they stay on this device.
+//   - Medical papers are kept out of the app on purpose: the file says where they belong instead.
+//   - Time records are never trimmed: Wisconsin and federal rules ask for 3 years (they live in Shifts).
+// The file lives in the private shared area 'hr' (supabase/hr.sql); until that has run it stays on this device.
 (function(){
   const A = window.SSApp; if (!A) return;
   const {h, head, toast, uid, isoDay} = A;
   const S = () => A.state();
   const MGR = ['manager','owner'];
   const isMgr = () => MGR.includes(S().tier) && (A.demo || MGR.includes(A.myRole));
-  const isOwner = () => S().tier === 'owner' && (A.demo || A.myRole === 'owner');
   const HR = () => { const s = S(); s.hr = s.hr && typeof s.hr === 'object' ? s.hr : {}; s.hr.people = s.hr.people || {}; return s.hr; };
-  const MED = () => { const s = S(); s.hrmed = s.hrmed && typeof s.hrmed === 'object' ? s.hrmed : {}; s.hrmed.people = s.hrmed.people || {}; return s.hrmed; };
   const file = id => { const f = HR().people[id] = HR().people[id] || {}; f.paper = f.paper || {}; f.reviews = f.reviews || []; f.actions = f.actions || []; return f; };
   const team = () => ((S().shifts && S().shifts.team && S().shifts.team[S().site]) || []).filter(p => !/\(sample\)/.test(p.n));
   const PAPER = [
     ['w4','Federal W-4 (tax withholding)'],
     ['wt4','State withholding form (Wisconsin WT-4)'],
-    ['i9','I-9 checked within 3 days of starting (keep the paper copy locked up)'],
+    ['i9','I-9 checked within 3 days of starting (kept in its own folder, apart from HR files)'],
     ['newhire','Reported as a new hire to the state (Wisconsin: within 20 days)'],
     ['deposit','Direct deposit or paycheck set up'],
     ['handbook','Handbook or store rules read and signed'],
@@ -88,6 +87,7 @@
         if (e.target.checked){ const note = k === 'keys' ? (prompt('Which keys or code? (no alarm codes themselves)') || '') : ''; f.paper[k] = {done:true, at:today(), by:A.me(), note}; }
         else delete f.paper[k]; A.save(); A.route(); }}), t+(x && x.done ? ' · '+A.fmtDate(x.at)+(x.note ? ' · '+x.note : '') : '')));
     });
+    const i9 = i9Until(f); if (i9) pc.append(h('p',{class:'small'}, h('b',null,'I-9: '), i9));
     v.append(pc);
 
     // reviews
@@ -144,18 +144,19 @@
     if (sn.length) v.append(h('div',{class:'card'}, h('h2',null,'Employee file notes'), h('div',{class:'list'}, sn.map(x => h('div',{class:'item'},
       h('span',{class:'small muted'}, A.fmtDate(String(x.when||x.at).slice(0,10))+' · by '+x.by), h('p',null,x.text))))));
 
-    // medical: owner only, separate area
-    if (isOwner()){
-      const m = MED().people[p.id] = MED().people[p.id] || {notes:[]};
-      const mc = h('div',{class:'card'}, h('h2',null,'Medical and accommodations (owner only)'),
-        h('p',{class:'small muted'},'Kept apart from the HR file, as the law expects. Write only what you need to run the schedule (for example "no lifting over 20 lb until 1/15"), not diagnoses.'));
-      m.notes.slice().reverse().forEach(x => mc.append(h('div',{class:'item'}, h('span',{class:'small muted'}, A.fmtDate(x.at)+' · '+x.by), h('p',null,x.text))));
-      const t = h('textarea',{rows:'2',maxlength:'1000','aria-label':'Medical or accommodation note'});
-      mc.append(t, h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ const x = t.value.trim(); if (!x) return; m.notes.push({id:uid(), at:today(), by:A.me(), text:x}); A.save(); toast('Saved'); A.route(); }},'Add note'));
-      v.append(mc);
-    }
+    // medical: kept out of the app on purpose
+    v.append(h('div',{class:'card'}, h('h2',null,'Medical papers'),
+      h('p',{class:'small muted'},'Doctor\'s notes, medical forms and anything about health go in a separate locked folder, not in this app and not in the regular HR file. If someone needs a schedule change (for example "no lifting over 20 lb until 1/15"), write just that as a note on the schedule, without the reason.')));
   }
 
+  // I-9s are kept for 3 years after hiring or 1 year after the job ends, whichever is later, then destroyed.
+  function i9Until(f){
+    if (!f.start) return '';
+    const plus = (d, y) => { const x = new Date(d+'T12:00:00'); x.setFullYear(x.getFullYear()+y); return isoDay(x); };
+    if (f.status !== 'left' || !f.end) return 'keep while they work here, and at least until '+A.fmtDate(plus(f.start, 3))+'.';
+    const until = [plus(f.start, 3), plus(f.end, 1)].sort().pop();
+    return (until <= today() ? 'can be shredded now (kept until ' : 'shred after ')+A.fmtDate(until)+(until <= today() ? ').' : '.');
+  }
   function printAction(p, a){
     const w = window.open('', '_blank'); if (!w) return toast('Allow pop-ups to print');
     const esc = s => String(s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -167,7 +168,7 @@
     w.document.close(); w.focus(); w.print();
   }
 
-  A.register({id:'hr', name:'HR files', what:'One file per person: new-hire paperwork, reviews, coaching and write-ups with a printable sign-off; medical notes kept separate for the owner.', tiers:['manager','owner'],
+  A.register({id:'hr', name:'HR files', what:'One file per person: new-hire paperwork with I-9 dates, reviews, coaching and write-ups with a printable sign-off. Medical papers stay out of the app.', tiers:['manager','owner'],
     views:{hr:{t:'HR files', ic:'🗂️', render:list, min:'manager'}, hrfile:{t:'HR file', ic:'🗂️', render:person, min:'manager', hidden:true}}});
   A.ownerHooks.push(v => { const ppl = team(); if (!ppl.length) return; let due = 0;
     ppl.forEach(p => { const f = file(p.id), last = f.reviews.slice().sort((a,b) => String(b.at).localeCompare(String(a.at)))[0];
