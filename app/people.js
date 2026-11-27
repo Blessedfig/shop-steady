@@ -147,7 +147,7 @@
     v.append(f);
   }
 
-  A.register({id:'people', name:'Vendors and customers', what:'Vendor directory with status, terms and lead times; customers with birthdays, likes, consent and special orders priced by your margin rules.', tiers:['staff','lead','manager','owner'],
+  A.register({id:'people', name:'Vendors and customers', what:'Vendor directory with status, terms and lead times; customers with birthdays, likes, consent and special orders priced by your margin rules.', tiers:['lead','manager','owner'],
     views:{vendors:{t:'Vendors', ic:'🚚', render:vendorsView}, customers:{t:'Customers', ic:'🙂', render:customersView}, pricing:{t:'Order pricing', ic:'💲', render:marginView}}});
   A.homeHooks.push(v => { const b = customers().filter(c => { if (!c.bday) return false; const d = isoDay(new Date()).slice(5), e = addDays(isoDay(new Date()),7).slice(5); return d <= e ? (c.bday >= d && c.bday <= e) : (c.bday >= d || c.bday <= e); });
     const waiting = customers().flatMap(c => c.orders.filter(o => o.status === 'To order' || o.status === 'Ordered'));

@@ -292,7 +292,9 @@
     }
   }
 
-  A.register({id:'count', name:'Stock count and Shopify sync', what:'Scan everything you have, compare with Shopify, set the real counts (missing items to 0) with a Shopify import file, and record where you buy each vendor\'s products.', tiers:['staff','lead','manager','owner'],
+  A.countCatalog = async () => { await loadCat(); if (!Object.keys(CAT.items).length) await fetchCat().catch(() => {}); return CAT; }; // used by Receiving
+  A.normCode = norm;
+  A.register({id:'count', name:'Stock count and Shopify sync', what:'Scan everything you have, compare with Shopify, set the real counts (missing items to 0) with a Shopify import file, and record where you buy each vendor\'s products.', tiers:['lead','manager','owner'],
     views:{count:{t:'Stock count', ic:'🔎', render:count}}});
   window.SSCount = {parseCsv, loadProducts, loadInventory, scan, norm};
 })();

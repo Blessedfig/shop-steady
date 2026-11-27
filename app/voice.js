@@ -91,7 +91,7 @@
   }
 
   A.register({id:'voice', name:'Customer and team voice', what:'Log what customers ask for or pass on, collect staff ideas, needs and gripes (with an anonymous option), weekly check-ins, and a summary for decisions.', tiers:['staff','lead','manager','owner'],
-    views:{custvoice:{t:'Customer notes', ic:'🗣️', render:customers}, teamvoice:{t:'Team voice', ic:'💬', render:staff}, voicesum:{t:'Voice summary', ic:'📊', render:summary}}});
+    views:{custvoice:{t:'Customer notes', ic:'🗣️', render:customers}, teamvoice:{t:'Team voice', ic:'💬', render:staff}, voicesum:{t:'Voice summary', ic:'📊', render:summary, min:'manager'}}});
   A.ownerHooks.push(v => { const open = here(V().staff).filter(x => x.status==='open').length, asked = here(V().cust).filter(x => x.kind==='asked' && x.at >= addDays(isoDay(new Date()),-7)).length;
     v.append(h('div',{class:'card'}, h('h2',null,'Voice this week'), h('p',null, asked+' customer requests for things we don\'t carry · '+open+' team posts waiting for an answer'), h('a',{href:'#/voicesum'},'See the summary'))); });
 })();

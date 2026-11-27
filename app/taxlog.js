@@ -26,12 +26,16 @@
     donated:{l:'Donated (older entry)', g:'charity'}, giveaway:{l:'Given away (older entry)', g:'promo'} };
   const GROUPS = {promo:'Advertising and promotion (at cost)', charity:'Charitable donations (at cost)', loss:'Inventory losses (at cost)', sales:'Discounts and comps (retail value, reduces sales)', giftcard:'Gift cards donated (face value still out)'};
   const rl = k => (REASONS[k] || {l:k}).l;
-  const canWriteOff = () => MGR.includes(actorTier());
+  const canWriteOff = () => MGR.includes(actorTier()); // write-offs, giveaways and trips: store manager or owner only
   const OTHER = {cashout:'Cash paid out of the drawer', homeoffice:'Home office or home storage', question:'Question for the accountant', other:'Something else for the books'};
 
   function T(){ const s = S(); s.tax = s.tax || {trips:[], writeoffs:[], notes:[], places:[], rate:0.70, rateYear:2025, vehicle:'', office:{sqft:0, method:'simplified'}};
     const t = s.tax; ['trips','writeoffs','notes','places'].forEach(k => t[k] = t[k] || []);
     s.writeoffs = s.writeoffs || []; if (t.writeoffs.length){ s.writeoffs.push(...t.writeoffs); t.writeoffs = []; }
+    // Trips have their own shared area ('trips') that only a store manager or the owner can read (supabase/private-areas.sql).
+    // Older copies kept them in tax.trips; a manager's or owner's device moves them over. Staff devices leave them alone.
+    s.trips = s.trips || [];
+    if (t.trips.length && (!A.myRole || MGR.includes(A.myRole))){ const ids = new Set(s.trips.map(x => x.id)); t.trips.forEach(x => ids.has(x.id) || s.trips.push(x)); t.trips = []; }
     if (!t.places.length) t.places = [{n:'Post office', mi:2}, {n:'Bank', mi:2}, {n:'Office supply store', mi:6}];
     s.exp = s.exp || []; return t; }
   const here = list => list.filter(x => x.site === S().site);
@@ -59,14 +63,16 @@
   // ---------- the quick log forms (used on the Log it screen and in store mode) ----------
   function forms(onDone){
     const t = T(), box = h('div',{class:'grid'});
-    const tabs = [['trip','🚗 Trip'],['receipt','🧾 Receipt']].concat(canWriteOff() ? [['writeoff','🎁 Write-off or giveaway']] : []).concat([['other','📝 Other']]);
-    let cur = 'trip';
+    const mgr = canWriteOff();
+    const tabs = (mgr ? [['trip','🚗 Trip']] : []).concat([['receipt','🧾 Receipt']]).concat(mgr ? [['writeoff','🎁 Write-off or giveaway']] : []).concat([['other','📝 Other']]);
+    let cur = tabs[0][0];
     const bar = h('div',{class:'row',role:'tablist'}), body = h('div');
     const draw = () => { bar.replaceChildren(...tabs.map(([k,l]) => h('button',{class:'btn sm '+(k===cur?'':'quiet'),type:'button',role:'tab','aria-selected':String(k===cur),onclick:()=>{ cur = k; draw(); }}, l)));
       body.replaceChildren(({trip, receipt, writeoff, other})[cur]()); };
     const done = msg => { A.save(); toast(msg + (status() === 'ok' ? '' : ' A manager will check it.')); onDone ? onDone() : A.route(); };
 
     function trip(){
+      if (!canWriteOff()) return h('p',{class:'muted'},'Only a store manager or the owner logs trips.');
       const f = h('form',{class:'grid'},
         h('p',{class:'small muted'},'Driving for the business: bank, post office, picking up stock, a book fair. Not your commute from home to the store.'),
         h('div',{class:'row'}, t.places.map(p => h('button',{class:'btn ghost sm',type:'button',onclick:()=>{ f.to.value = p.n; f.mi.value = p.mi; f.why.focus(); }}, p.n+' · '+p.mi+' mi'))),
@@ -78,7 +84,7 @@
         h('label',{class:'checkrow'}, h('input',{type:'checkbox',name:'save'}), 'Save this place for one tap next time'),
         h('button',{class:'btn',type:'submit'},'Log trip'));
       f.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(f), mi = +d.get('mi') * (d.get('rt') ? 2 : 1), to = String(d.get('to')).trim();
-        t.trips.push({id:uid(), site:S().site, date:String(d.get('date')), to, why:String(d.get('why')).trim(), mi:Math.round(mi*10)/10, by:who(), status:status()});
+        S().trips.push({id:uid(), site:S().site, date:String(d.get('date')), to, why:String(d.get('why')).trim(), mi:Math.round(mi*10)/10, by:who(), status:status()});
         if (d.get('save') && !t.places.some(p => p.n.toLowerCase() === to.toLowerCase())) t.places.push({n:to, mi:+d.get('mi')});
         done('Trip logged: '+(Math.round(mi*10)/10)+' miles.'); });
       return f; }
@@ -150,13 +156,13 @@
     draw(); box.append(bar, body); return box;
   }
   // Store mode (shifts.js) shows this under the checklist.
-  A.quickLog = () => h('details',{class:'card'}, h('summary',null, h('b',null,'Log a trip, receipt or write-off')), forms(() => A.route()));
+  A.quickLog = () => h('details',{class:'card'}, h('summary',null, h('b',null, canWriteOff() ? 'Log a trip, receipt or write-off' : 'Log a receipt or note for the books')), forms(() => A.route()));
 
   // ---------- screens ----------
   function logView(v){
-    v.append(head('Tax records · '+A.site().name, 'Log it for the books', 'Trips, receipts, write-offs and anything your accountant will ask about. Takes a minute now, saves hours in April.'));
+    v.append(head('Tax records · '+A.site().name, 'Log it for the books', (isMgr() ? 'Trips, receipts, write-offs' : 'Receipts')+' and anything your accountant will ask about. Takes a minute now, saves hours in April.'));
     v.append(h('div',{class:'card'}, forms()));
-    const t = T(), pend = [...here(t.trips).map(x => ['Trip', x, x.date+' · '+x.mi+' mi to '+x.to+' · '+x.why]), ...here(S().exp).filter(x => x.status === 'pending').map(x => ['Receipt', x, x.date+' · '+money(x.amt)+' · '+(x.payee||'')+' · '+x.cat]),
+    const t = T(), pend = [...here(S().trips).map(x => ['Trip', x, x.date+' · '+x.mi+' mi to '+x.to+' · '+x.why]), ...here(S().exp).filter(x => x.status === 'pending').map(x => ['Receipt', x, x.date+' · '+money(x.amt)+' · '+(x.payee||'')+' · '+x.cat]),
       ...here(S().writeoffs).map(x => ['Write-off', x, x.date+' · '+x.qty+' × '+x.item+' · '+rl(x.why)]), ...here(t.notes).map(x => ['Note', x, x.date+' · '+OTHER[x.kind]+' · '+x.text.slice(0,80)])].filter(([,x]) => x.status === 'pending');
     if (isMgr()) v.append(h('div',{class:'card'}, h('h2',null,'Waiting for your OK'),
       pend.length ? h('div',{class:'list'}, pend.map(([k,x,txt]) => h('div',{class:'item'}, h('b',null,k), h('span',{class:'small'}, txt), h('span',{class:'small muted'},'Logged by '+x.by),
@@ -169,7 +175,7 @@
   function mileage(v){
     const t = T(), y = String(yearOf());
     v.append(head('Tax records · '+A.site().name, 'Mileage log', 'The record the IRS asks for: date, destination, business purpose and miles for every trip.'));
-    const trips = here(t.trips).filter(x => x.date.startsWith(y) && x.status === 'ok').sort((a,b) => a.date.localeCompare(b.date));
+    const trips = here(S().trips).filter(x => x.date.startsWith(y) && x.status === 'ok').sort((a,b) => a.date.localeCompare(b.date));
     const miles = trips.reduce((a,x) => a + x.mi, 0);
     v.append(h('div',{class:'card'}, h('h2',null, y+': '+miles.toLocaleString(undefined,{maximumFractionDigits:1})+' business miles'),
       h('p',null,'At '+money(t.rate)+' a mile that is about '+money(miles*t.rate)+'.'),
@@ -188,7 +194,7 @@
     const years = [...new Set([new Date().getFullYear(), new Date().getFullYear()-1, ...S().exp.map(x => +x.date.slice(0,4))])].sort((a,b) => b-a);
     v.append(h('label',{class:'f'},'Tax year', h('select',{onchange:e=>{ S().taxYear = +e.target.value; A.save(); A.route(); }}, years.map(n => h('option',{value:String(n),selected:String(n)===y},String(n))))));
     const ex = S().exp.filter(inY), byCat = {}; ex.forEach(x => byCat[x.cat] = (byCat[x.cat]||0) + x.amt);
-    const trips = t.trips.filter(inY), miles = trips.reduce((a,x) => a + x.mi, 0);
+    const trips = S().trips.filter(inY), miles = trips.reduce((a,x) => a + x.mi, 0);
     const wo = (S().writeoffs || []).filter(inY), woBy = {}, gc = [];
     wo.forEach(x => { const g = (REASONS[x.why] || {g:'loss'}).g; if (g === 'giftcard'){ gc.push(x); return; } woBy[g] = woBy[g] || {cost:0, retail:0, n:0}; woBy[g].cost += x.qty*x.cost; woBy[g].retail += x.qty*(x.retail||0); woBy[g].n++; });
     const noLetter = wo.filter(x => (REASONS[x.why] || {}).g === 'charity' && !x.c501).length;
@@ -223,9 +229,9 @@
       h('div',{class:'row'}, h('button',{class:'btn',type:'button',onclick:qb},'QuickBooks expenses (.csv)'), h('button',{class:'btn ghost',type:'button',onclick:pack},'Full tax records (.csv)'))));
   }
 
-  A.register({id:'taxlog', name:'Tax records', what:'Mileage log, receipt photos, stock write-offs and notes for the books, logged during shifts. Year-end summary and QuickBooks-ready export.', tiers:['staff','lead','manager','owner'],
-    views:{taxlog:{t:'Log it for the books', ic:'🗂️', render:logView}, mileage:{t:'Mileage log', ic:'🚗', render:mileage}, taxsum:{t:'Tax summary', ic:'📒', render:summary}}});
-  A.ownerHooks.push(v => { const t = T(), y = String(new Date().getFullYear()), miles = t.trips.filter(x => x.date.startsWith(y) && x.status === 'ok').reduce((a,x) => a + x.mi, 0);
-    const pend = [...t.trips, ...(S().writeoffs||[]), ...t.notes, ...S().exp].filter(x => x.status === 'pending').length;
+  A.register({id:'taxlog', name:'Tax records', what:'Mileage log (managers and owner), receipt photos, stock write-offs and notes for the books, logged during shifts. Year-end summary and QuickBooks-ready export.', tiers:['lead','manager','owner'],
+    views:{taxlog:{t:'Log it for the books', ic:'🗂️', render:logView}, mileage:{t:'Mileage log', ic:'🚗', render:mileage, min:'manager'}, taxsum:{t:'Tax summary', ic:'📒', render:summary, min:'owner'}}});
+  A.ownerHooks.push(v => { const t = T(), y = String(new Date().getFullYear()), miles = S().trips.filter(x => x.date.startsWith(y) && x.status === 'ok').reduce((a,x) => a + x.mi, 0);
+    const pend = [...S().trips, ...(S().writeoffs||[]), ...t.notes, ...S().exp].filter(x => x.status === 'pending').length;
     v.append(h('div',{class:'card'}, h('h2',null,'Tax records '+y), h('p',null, miles.toLocaleString(undefined,{maximumFractionDigits:1})+' business miles'+(pend ? ' · '+pend+' items waiting for your OK' : '')), h('a',{href:'#/taxsum'},'See the year-end summary'))); });
 })();

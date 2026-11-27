@@ -8,7 +8,7 @@
 --   save_doc()        : saves an area only if nobody else saved it since you loaded it, so the app can merge
 --                       two people's changes instead of one overwriting the other.
 -- Write-offs and giveaways (key 'writeoffs') can be changed only by a manager or the owner.
--- Not covered yet: each area is shared as a whole, so staff devices receive pay rates inside "shifts".
+-- Then run private-areas.sql: pay, mileage, write-offs and item costs are readable only by a store manager or the owner.
 
 -- 1. Roles
 alter table public.desk_members add column if not exists role text not null default 'staff';

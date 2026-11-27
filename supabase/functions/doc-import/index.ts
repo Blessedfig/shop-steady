@@ -69,8 +69,11 @@ Deno.serve(async (req) => {
   if (body.ping) return json({ ok: !!apiKey });
   if (!apiKey) return json({ error: "not-configured" }, 503);
   const text = String(body.text ?? "");
-  if (!text.trim()) return json({ error: "no-input" }, 400);
+  // A photo of a packing slip or invoice also works: a JPEG data URL from the phone camera, shrunk in the browser.
+  const img = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String(body.image ?? ""));
+  if (!text.trim() && !img) return json({ error: "no-input" }, 400);
   if (text.length > 200000) return json({ error: "too-long", hint: "Split the document and send it in parts." }, 413);
+  if (img && img[2].length > 6_000_000) return json({ error: "too-long", hint: "Take the photo again a little farther away." }, 413);
 
   const client = new Anthropic({ apiKey });
   try {
@@ -82,7 +85,10 @@ Deno.serve(async (req) => {
       fallbacks: "default",
       output_config: { effort: "low", format: { type: "json_schema", schema: SCHEMA } },
       system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
-      messages: [{ role: "user", content: `Document "${String(body.source ?? "").slice(0, 120)}":\n\n${text}` }],
+      messages: [{ role: "user", content: img
+        ? [{ type: "image", source: { type: "base64", media_type: `image/${img[1]}`, data: img[2] } },
+           { type: "text", text: `Photo of a document from "${String(body.source ?? "").slice(0, 120)}". Read every line item.` }]
+        : `Document "${String(body.source ?? "").slice(0, 120)}":\n\n${text}` }],
     };
     const res = await client.beta.messages.create(params);
     if (res.stop_reason === "refusal") return json({ error: "refused" }, 422);
