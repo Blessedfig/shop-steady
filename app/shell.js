@@ -158,9 +158,12 @@
   // ---------- sign-in: password, emailed code fallback, persistent session, invite only ----------
   function gate(msg, err){ $('app').hidden = true; $('gate').hidden = false; const m = $('gateMsg'); m.textContent = msg||''; m.hidden = !msg; m.className = 'msg'+(err?' err':''); }
   const cfg = window.DESK_CONFIG || {};
-  if (!cfg.supabaseUrl || !window.supabase || /YOUR-PROJECT-REF/.test(cfg.supabaseUrl)){
-    // No Supabase yet: run in local demo mode so you can build screens first.
-    $('gate').hidden = true; $('app').hidden = false; $('whoEmail').textContent = 'Demo mode (no sign-in set up)';
+  // Demo mode: no Supabase set up yet, or someone chose "Try the demo" (?demo in the address). Sample data only.
+  let demo = /[?&]demo\b/.test(location.search); try { demo = demo || sessionStorage.getItem('shop-steady-demo') === '1'; } catch(e){}
+  window.SSApp.demo = demo || !cfg.supabaseUrl || !window.supabase || /YOUR-PROJECT-REF/.test(cfg.supabaseUrl);
+  $('demoBtn') && $('demoBtn').addEventListener('click', () => { try { sessionStorage.setItem('shop-steady-demo','1'); } catch(e){} location.reload(); });
+  if (window.SSApp.demo){
+    $('gate').hidden = true; $('app').hidden = false; $('whoEmail').textContent = 'Demo with sample data';
     document.addEventListener('DOMContentLoaded', () => { fillSwitchers(); route(); }); if (document.readyState !== 'loading'){ fillSwitchers(); route(); }
     return;
   }

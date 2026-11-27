@@ -235,3 +235,4 @@ body.kiosk .shell{grid-template-columns:1fr}
 .pinkeys{display:grid;grid-template-columns:repeat(3,72px);gap:.75rem}
 .pinkeys .btn{min-height:64px;font-size:1.3rem;padding:0}
 textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:.6rem .7rem;background:var(--bg)}
+.camview{width:100%;max-width:420px;border-radius:12px;background:#000}
