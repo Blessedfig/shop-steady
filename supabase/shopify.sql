@@ -161,3 +161,30 @@ end $$;
 revoke all on function public.shopify_tick() from public, anon, authenticated;
 select cron.unschedule(jobid) from cron.job where jobname = 'shopify-sync';
 select cron.schedule('shopify-sync', '*/15 * * * *', 'select public.shopify_tick()');
+
+-- Insights (read with the person's own rights, so sales stay manager+ only)
+create or replace view public.shopify_sellers_30 with (security_invoker = true) as
+  select l.variant_id, max(l.title) as title, sum(l.qty) as qty30, round(sum(l.net), 2) as net30,
+         max(v.available) as available, max(v.vendor) as vendor, max(v.barcode) as barcode, max(v.sku) as sku
+  from public.shopify_order_lines l left join public.shopify_variants v on v.variant_id = l.variant_id
+  where l.day >= current_date - 30 and not l.cancelled and l.variant_id is not null
+  group by l.variant_id;
+grant select on public.shopify_sellers_30 to authenticated;
+
+create or replace function public.shopify_stock_summary() returns jsonb
+language sql stable security definer set search_path = public as $$
+  select case when public.role_rank(public.my_role()) >= 3 then (
+    select jsonb_build_object(
+      'variants', count(*),
+      'in_stock', count(*) filter (where v.available > 0),
+      'units', coalesce(sum(greatest(v.available, 0)), 0),
+      'value_cost', round(coalesce(sum(greatest(v.available, 0) * c.cost), 0), 2),
+      'value_retail', round(coalesce(sum(greatest(v.available, 0) * v.price), 0), 2),
+      'no_cost', count(*) filter (where v.available > 0 and (c.cost is null or c.cost = 0)),
+      'negative', count(*) filter (where v.available < 0),
+      'unsold_60', count(*) filter (where v.available > 0 and not exists (select 1 from public.shopify_order_lines l where l.variant_id = v.variant_id and l.day >= current_date - 60)),
+      'unsold_60_cost', round(coalesce(sum(greatest(v.available, 0) * c.cost) filter (where not exists (select 1 from public.shopify_order_lines l where l.variant_id = v.variant_id and l.day >= current_date - 60)), 0), 2))
+    from public.shopify_variants v left join public.shopify_costs c on c.inventory_item_id = v.inventory_item_id)
+  else null end $$;
+revoke all on function public.shopify_stock_summary() from public, anon;
+grant execute on function public.shopify_stock_summary() to authenticated;
