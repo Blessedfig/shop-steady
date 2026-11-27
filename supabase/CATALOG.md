@@ -4,7 +4,7 @@ One search across every vendor's title list, with each vendor's stock, your cost
 Tables and rules: `catalog.sql`. Screens: **Title search** (everyone) and **Catalog imports** (managers and owner), in `app/catalog.js`.
 
 ## Set it up (once)
-1. Supabase > SQL Editor > New query > paste all of `catalog.sql` > Run. Running it again is safe.
+1. Supabase > SQL Editor > New query > paste all of `catalog.sql` > Run (after `shopify.sql`). Running it again is safe.
 2. In the app, as owner, open **Catalog imports** and press **Copy vendors from the Vendors screen**.
 3. For each vendor, open it under **Discounts and stock links** and fill in the usual discount off list (for example 46 for PRH returnable),
    any discounts by product class (manga, comics, non-returnable...), and a stock check link if the vendor has a search page.
@@ -65,3 +65,24 @@ It carries purchase orders and the publisher's acknowledgements, which come back
 usually from bookstore POS systems. Supporting it would mean a Supabase function that writes the order file and reads the acknowledgements.
 It is worth doing once there are direct terms accounts with the publishers (Pubnet needs those, and prepay accounts mostly don't work).
 Sign-up: info.pubnet.org/services/join-pubnet.
+
+## Email an order to yourself
+**Email this order to me** sends the order to the signed-in manager's or owner's own address (never anyone else), with the CSV attached, through the `send-order` function.
+It needs a free Resend account: add Supabase secrets `RESEND_API_KEY` and `ORDER_FROM`, then deploy `supabase/functions/send-order`.
+Until then the button opens your own email app addressed to you.
+
+## Every product tracked by the vendor you order it through
+- **Shopify → catalog (hourly):** each Shopify product with an ISBN or SKU becomes searchable and orderable. Link each Shopify *Vendor* name (publisher, or the brand name Faire's Shopify app uses) to the vendor you order through, under Catalog imports > Products from Shopify.
+- **Title search** shows store stock, shelf price and 30-day sales next to every vendor's stock and cost.
+- **Reorder suggestions** (Orders screen): sold in 30 days and down to 1 or fewer, grouped by ordering vendor, with one-tap Add.
+- **Purchase history** (managers, owner): every line bought by ISBN, with vendor, date, quantity, cost, list price, shelf price and margin, plus a CSV download.
+  Orders made here record themselves. Orders placed on Faire, Amazon or the PRH portal are recorded when the shipment is checked in under Receiving.
+
+## What each ordering site can sync (Nov 2026)
+| Site | What can flow in automatically |
+|---|---|
+| Faire | Faire's own Shopify app ("Faire: Buy Wholesale") creates the product in Shopify when you buy. The app picks it up through the Shopify sync. Faire has no API for buyers. |
+| Amazon Business | Official API: Reconciliation (orders and invoices), Product Search and Ordering. Needs Amazon's onboarding questionnaire and approval, then a one-time Allow by the account admin. No password is stored. |
+| Penguin Random House | ONIX title feed and daily in-stock feed by SFTP after their data-feed form. Orders: paste or upload in Self-Service, or EDI through Pubnet. |
+| Hachette, Simon & Schuster, IPG | ONIX feeds on request; EDI through Pubnet once you have terms accounts. |
+| Bookazine, Lunar | Their portals and CSV forms; import the files. |

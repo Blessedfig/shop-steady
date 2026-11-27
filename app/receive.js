@@ -157,6 +157,10 @@
 
   function finish(x, toExp){
     x.status = 'done'; x.doneAt = new Date().toISOString(); x.doneBy = A.me();
+    // Purchase history by ISBN (supabase/catalog.sql): shipments ordered outside the app (Faire, Amazon, the PRH portal)
+    // are recorded with vendor, date, quantity, cost and price. Orders made in the app are already recorded.
+    if (!x.po && !A.demo && A.sb) A.sb.rpc('record_outside_order', {p_vendor_name:x.ven, p_ref:x.ref || null, p_day:/^\d{4}-\d{2}-\d{2}$/.test(x.docDate||'') ? x.docDate : null,
+      p_rows:x.lines.map(l => ({code:l.code, title:l.t, qty:l.got || l.qty || 0, cost:l.cost == null ? '' : String(l.cost), price:l.price == null ? '' : String(l.price)}))}).then(r => { if (r.error && !/record_outside_order|schema cache/.test(r.error.message)) console.warn('purchase history', r.error.message); });
     // remember cost and vendor per code for reorders and special-order quotes
     const s = S(); s.costs = s.costs || {};
     x.lines.forEach(l => { if (l.code && l.cost != null) s.costs[norm(l.code)] = {cost:l.cost, ven:x.ven, at:isoDay(new Date())}; });

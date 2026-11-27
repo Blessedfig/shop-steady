@@ -44,6 +44,19 @@
     A.save();
   }
 
+  // Email the order to the signed-in manager or owner (their own address only), with the CSV attached.
+  // Uses the send-order function; until its email service is set up, opens your own email app addressed to you instead.
+  async function emailMe(o, btn){
+    btn.disabled = true;
+    try {
+      const {data, error} = await A.sb.functions.invoke('send-order', {body:{po:o.id, store:A.site().name}});
+      if (!error && data && data.ok){ toast('Sent to ' + data.to); btn.textContent = 'Emailed ✓'; return; }
+      const me = (await A.sb.auth.getUser()).data.user?.email || '';
+      if (me) location.href = 'mailto:' + encodeURIComponent(me) + '?subject=' + encodeURIComponent('Order ' + o.po_number + ' for ' + o.vendor.name + ' (not sent yet)') + '&body=' + encodeURIComponent(emailBody(o) + '\n\nPaste list:\n' + pasteText(o));
+      toast('Opening your email app (automatic email is not set up yet)');
+    } finally { btn.disabled = false; }
+  }
+
   function lineRow(o, l, draft){
     const [label, tone] = AV[l.availability] || AV.unknown;
     const row = h('div',{class:'item'},
@@ -77,6 +90,7 @@
     if (draft && isMgr() && o.lines.length){
       const send = h('div',{class:'grid'}, h('h3',null,'Send it'));
       const tools = h('div',{class:'row'},
+        h('button',{class:'btn sm', type:'button', onclick:e => emailMe(o, e.target)}, 'Email this order to me'),
         h('button',{class:'btn ghost sm', type:'button', onclick:e => A.copy(pasteText(o), e.target)}, 'Copy ISBNs and quantities'),
         h('button',{class:'btn ghost sm', type:'button', onclick:() => download(o.po_number + '-' + o.vendor.name.replace(/\W+/g,'-').toLowerCase() + '.csv', 'text/csv', orderCsv(o))}, 'Download order file (.csv)'),
         o.vendor.order_url ? h('a',{class:'btn ghost sm', href:o.vendor.order_url, target:'_blank', rel:'noopener'}, 'Open ' + o.vendor.name + ' ordering') : null,
@@ -116,14 +130,57 @@
     catch(e){ box.replaceChildren(h('p',{class:'msg err'}, /list_orders|schema cache/.test(e.message) ? 'Ordering is not set up yet. The owner needs to run the latest supabase/catalog.sql in Supabase.' : e.message)); return; }
     box.replaceChildren();
     if (!orders.length) box.append(h('div',{class:'card'}, h('p',null,'No orders yet. Find a title in '), h('a',{href:'#/titles'},'Title search'), h('p',{class:'small muted'},' and press Add to order next to the vendor you want.')));
-    const drafts = orders.filter(o => o.status === 'draft'), rest = orders.filter(o => o.status !== 'draft');
+    if (isMgr()) box.append(await reorderCard());
+    const drafts = orders.filter(o => o.status === 'draft'), rest = orders.filter(o => o.status !== 'draft' && o.lines.length);
     if (drafts.length) box.append(h('h2',null,'Open orders'), ...drafts.map(orderCard));
     if (rest.length) box.append(h('h2',null,'Sent and recent'), ...rest.map(orderCard));
     if (!isMgr() && drafts.length) box.append(h('p',{class:'small muted'},'A manager or the owner sends orders.'));
   }
 
+  // Running low in Shopify and sold in the last 30 days, grouped by the vendor you order each one through.
+  async function reorderCard(){
+    const card = h('details',{class:'card'}, h('summary',null, h('b',null,'Reorder suggestions')));
+    let data;
+    try { data = await rpc('reorder_suggestions', {p_min:1}); } catch(e){ card.append(h('p',{class:'small muted'}, /reorder_suggestions|schema cache|shopify/.test(e.message) ? 'Needs the Shopify link and the latest catalog.sql.' : e.message)); return card; }
+    if (!data.length){ card.append(h('p',{class:'small muted'},'Nothing selling is down to 1 or fewer right now (items already on an order are left out).')); return card; }
+    card.querySelector('summary').append(' · ' + data.reduce((a,g) => a + g.items.length, 0) + ' items');
+    data.forEach(g => {
+      card.append(h('h3',null, g.vendor));
+      g.items.slice(0, 40).forEach(it => {
+        const add = g.vendor_id ? h('button',{class:'btn quiet sm', type:'button', onclick:async e => { if (await addToOrder(g.vendor_id, it.item_key, Math.max(1, Math.min(it.sold30, 5)), 'Reorder')) { e.target.textContent = 'Added ✓'; e.target.disabled = true; } }}, 'Add ' + Math.max(1, Math.min(it.sold30, 5))) : null;
+        card.append(h('div',{class:'row small'}, h('span',null, it.title + ' · ' + it.available + ' left · sold ' + it.sold30 + ' in 30 days'), add));
+      });
+      if (!g.vendor_id) card.append(h('p',{class:'small muted'},'Link this Shopify vendor to the vendor you order from under Catalog imports, and these can be added to an order.'));
+    });
+    card.append(h('p',{class:'small muted'},'Suggested quantity is what sold in 30 days, up to 5. Change it on the order.'));
+    return card;
+  }
+
+  // Every purchase by ISBN, from orders made here and shipments checked in from any site.
+  async function historyView(v){
+    v.append(head('Buying · ' + A.site().name, 'Purchase history', 'Every title you bought: vendor, date, quantity, cost, list and shelf price, and margin. Orders from Faire, Amazon or the PRH portal are added when the shipment is checked in under Receiving.'));
+    if (!live()) return v.append(h('div',{class:'card'}, h('p',null,'Purchase history uses the shared database.')));
+    if (!isMgr()) return v.append(h('div',{class:'card'}, h('p',null,'Managers and the owner see purchase history.')));
+    const inp = h('input',{type:'search', placeholder:'ISBN, title or vendor', 'aria-label':'Search purchase history'}), days = h('select',{'aria-label':'Period'}, [[90,'Last 90 days'],[365,'Last year'],[1095,'Last 3 years']].map(([d,t]) => h('option',{value:String(d), selected:d === 365}, t)));
+    const out = h('div',{class:'grid'}), f = h('form',{class:'card row', role:'search'}, inp, days, h('button',{class:'btn', type:'submit'}, 'Show'));
+    v.append(f, out);
+    async function run(){
+      out.replaceChildren(h('p',{class:'muted'},'Loading…'));
+      let rows; try { rows = await rpc('purchase_history', {p_q:inp.value || null, p_days:+days.value}); } catch(e){ out.replaceChildren(h('p',{class:'msg err'}, e.message)); return; }
+      const spent = rows.reduce((a,r) => a + (r.line_cost || 0), 0), units = rows.reduce((a,r) => a + r.qty, 0);
+      const withM = rows.filter(r => r.margin != null), avgM = withM.length ? withM.reduce((a,r) => a + r.margin * r.qty, 0) / withM.reduce((a,r) => a + r.qty, 0) : null;
+      out.replaceChildren(h('div',{class:'card'}, h('p',null, rows.length + ' lines · ' + units + ' copies · ' + fmt(spent) + (avgM != null ? ' · average margin ' + Math.round(avgM*100) + '%' : '')),
+        h('button',{class:'btn quiet sm', type:'button', onclick:() => download('purchase-history-' + isoDay(new Date()) + '.csv', 'text/csv', toCsv([['Date','ISBN/SKU','Title','Author','Publisher','Vendor','Our PO','Their #','Qty','Cost each','List price','Shelf price','Margin','Line cost','Note'],
+          ...rows.map(r => [String(r.at).slice(0,10), r.item_key.replace(/^sku:/,''), r.title, r.contributors||'', r.publisher||'', r.vendor, r.po_number, r.vendor_ref||'', r.qty, r.unit_cost ?? '', r.list_price ?? '', r.store_price ?? '', r.margin == null ? '' : Math.round(r.margin*1000)/10 + '%', r.line_cost ?? '', r.note||''])]))}, 'Download (.csv)')));
+      rows.slice(0, 300).forEach(r => out.append(h('div',{class:'item'}, h('b',null, r.title), h('span',{class:'small muted'}, [String(r.at).slice(0,10), r.vendor, r.item_key.replace(/^sku:/,'SKU '), r.qty + ' × ' + (r.unit_cost != null ? fmt(+r.unit_cost) : 'cost unknown'),
+        r.store_price != null ? 'shelf ' + fmt(+r.store_price) : r.list_price != null ? 'list ' + fmt(+r.list_price) : '', r.margin != null ? Math.round(r.margin*100) + '% margin' : ''].filter(Boolean).join(' · ')))));
+    }
+    f.addEventListener('submit', e => { e.preventDefault(); run(); });
+    run();
+  }
+
   A.register({id:'orders', name:'Orders to vendors', what:'One order per publisher or distributor, built from Title search, with stock per line; send by upload file, email or the vendor’s site, then it waits in Receiving.', tiers:['staff','lead','manager','owner'],
-    views:{orders:{t:'Orders', ic:'🛒', render:ordersView}}});
+    views:{orders:{t:'Orders', ic:'🛒', render:ordersView}, purchases:{t:'Purchase history', ic:'🧾', render:historyView, min:'manager'}}});
   A.homeHooks.push(v => { if (!live() || !isMgr()) return;
     A.sb.rpc('list_orders', {p_status:'draft'}).then(r => { const n = (r.data||[]).filter(o => o.lines.length).length;
       if (n) v.append(h('div',{class:'card'}, h('h2',null,'Orders to send'), h('p',null, n + (n === 1 ? ' vendor has' : ' vendors have') + ' an open order. '), h('a',{href:'#/orders'},'See orders'))); }); });

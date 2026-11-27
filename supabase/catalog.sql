@@ -205,9 +205,10 @@ grant execute on function public.special_order_price(numeric, numeric) to authen
 
 -- 5. Search: by ISBN/UPC, or words from the title, author, series or publisher.
 -- Each result lists every vendor that carries it, best stock first. Cost and margin only for managers and the owner.
+drop function if exists public.search_titles(text, int, int);
 create or replace function public.search_titles(p_q text, p_limit int default 25, p_qty int default 1)
 returns table(item_key text, isbn13 text, title text, subtitle text, contributors text, publisher text, imprint text,
-              format text, pub_date date, list_price numeric, cover_url text, offers jsonb)
+              format text, pub_date date, list_price numeric, cover_url text, offers jsonb, store jsonb)
 language plpgsql stable security definer set search_path = public, extensions as $$
 #variable_conflict use_column
 declare q text := trim(coalesce(p_q,'')); digits text := regexp_replace(coalesce(p_q,''), '[^0-9Xx]', '', 'g');
@@ -250,7 +251,8 @@ begin
         oc.cost
       from public.vendor_offers o join public.vendors v on v.id = o.vendor_id
       cross join lateral (select public.offer_cost(o, c, v, p_qty) as cost) oc
-      where o.item_key = c.item_key) x), '[]'::jsonb)
+      where o.item_key = c.item_key) x), '[]'::jsonb),
+    case when to_regclass('public.shopify_variants') is not null then public.store_stock(c.item_key) end
   from top join public.catalog_titles c on c.item_key = top.item_key
   order by top.rank desc, c.title;
 end $$;
@@ -548,3 +550,231 @@ create view public.vendor_directory as
          returnable, free_freight_over, updated_at, order_method, order_url
   from public.vendors where public.is_desk_member();
 grant select on public.vendor_directory to authenticated;
+
+-- 9. Products tracked by the vendor you order them through (needs shopify.sql first).
+--   vendor_aliases : Shopify's "Vendor" field (publisher or brand name, e.g. "Kodansha" or a Faire brand) -> the vendor
+--                    you actually order it from (PRH, Faire...). Faire's Shopify app creates products with the brand name.
+--   catalog_from_shopify() : every Shopify product with an ISBN or SKU becomes searchable and orderable here, and gets
+--                    an offer from its ordering vendor at the Shopify cost (Faire items: the wholesale cost). Runs hourly.
+--   product_history(key)   : one product's story: store stock and sales, each vendor's stock and cost, and every order.
+--   reorder_suggestions()  : sold in the last 30 days and running low in Shopify, grouped by ordering vendor.
+create table if not exists public.vendor_aliases (
+  shopify_vendor text primary key check (length(shopify_vendor) between 1 and 160), -- matched case-insensitively
+  vendor_id      uuid not null references public.vendors(id) on delete cascade
+);
+alter table public.vendor_aliases enable row level security;
+revoke all on public.vendor_aliases from anon;
+grant select, insert, update, delete on public.vendor_aliases to authenticated;
+drop policy if exists "members read aliases" on public.vendor_aliases;
+create policy "members read aliases" on public.vendor_aliases for select to authenticated using (public.is_desk_member());
+drop policy if exists "managers change aliases" on public.vendor_aliases;
+create policy "managers change aliases" on public.vendor_aliases for all to authenticated
+  using (public.role_rank(public.my_role()) >= 3) with check (public.role_rank(public.my_role()) >= 3);
+
+-- The key a Shopify variant gets in the catalog: its ISBN-13 barcode, else its SKU, else its barcode.
+create or replace function public.shopify_item_key(p_barcode text, p_sku text) returns text language sql immutable as $$
+  select case
+    when regexp_replace(coalesce(p_barcode,''), '[^0-9]', '', 'g') ~ '^97[89][0-9]{10}$' then regexp_replace(p_barcode, '[^0-9]', '', 'g')
+    when regexp_replace(coalesce(p_sku,''), '[^0-9]', '', 'g') ~ '^97[89][0-9]{10}$' and length(regexp_replace(p_sku, '[0-9 -]', '', 'g')) = 0 then regexp_replace(p_sku, '[^0-9]', '', 'g')
+    when nullif(trim(p_sku),'') is not null then 'sku:' || left(trim(p_sku), 80)
+    when nullif(trim(p_barcode),'') is not null then 'sku:' || left(trim(p_barcode), 80)
+  end $$;
+
+create or replace function public.catalog_from_shopify() returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare n_t int; n_o int;
+begin
+  if coalesce(auth.jwt() ->> 'email','') <> '' and public.role_rank(public.my_role()) < 3 then raise exception 'manager-only'; end if; -- the hourly timer runs without a sign-in
+  with v as (
+    select distinct on (k) public.shopify_item_key(sv.barcode, sv.sku) as k, sv.*
+    from public.shopify_variants sv where coalesce(sv.status,'ACTIVE') <> 'ARCHIVED'
+    order by k, sv.updated_at desc)
+  insert into public.catalog_titles as c (item_key, title, publisher, upc, list_price, product_class, source)
+  select k, left(coalesce(nullif(v.product_title,''), k) || case when coalesce(v.variant_title,'') not in ('','Default Title') then ' - ' || v.variant_title else '' end, 400),
+         left(nullif(v.vendor,''),160), case when k like 'sku:%' then left(nullif(regexp_replace(coalesce(v.barcode,''),'[^0-9]','','g'),''),20) end,
+         v.price, left(lower(nullif(v.product_type,'')),40), 'shopify'
+  from v where k is not null
+  on conflict (item_key) do update set
+    upc = coalesce(c.upc, excluded.upc), list_price = coalesce(c.list_price, excluded.list_price),
+    product_class = coalesce(c.product_class, excluded.product_class), publisher = coalesce(c.publisher, excluded.publisher),
+    title = case when c.source = 'shopify' then excluded.title else c.title end, updated_at = now();
+  get diagnostics n_t = row_count;
+  -- an offer from the vendor each product is ordered through, at the Shopify cost when there is one
+  insert into public.vendor_offers as o (vendor_id, item_key, unit_cost, source, updated_at)
+  select distinct on (a.vendor_id, public.shopify_item_key(sv.barcode, sv.sku)) a.vendor_id, public.shopify_item_key(sv.barcode, sv.sku),
+         case when (select kind from public.vendors where id = a.vendor_id) in ('marketplace','general') then nullif(sc.cost, 0) end, 'shopify', now()
+  from public.shopify_variants sv join public.vendor_aliases a on lower(a.shopify_vendor) = lower(trim(sv.vendor))
+  left join public.shopify_costs sc on sc.inventory_item_id = sv.inventory_item_id
+  where public.shopify_item_key(sv.barcode, sv.sku) is not null
+  order by a.vendor_id, public.shopify_item_key(sv.barcode, sv.sku), sv.updated_at desc
+  on conflict (vendor_id, item_key) do update set unit_cost = coalesce(excluded.unit_cost, o.unit_cost), updated_at = now();
+  get diagnostics n_o = row_count;
+  return jsonb_build_object('products', n_t, 'vendor_links', n_o);
+end $$;
+revoke all on function public.catalog_from_shopify() from public, anon;
+grant execute on function public.catalog_from_shopify() to authenticated;
+do $$ begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.unschedule(jobid) from cron.job where jobname = 'catalog-from-shopify';
+    perform cron.schedule('catalog-from-shopify', '7 * * * *', 'select public.catalog_from_shopify()');
+  end if;
+end $$;
+
+-- Store stock and 30-day sales for a catalog key (all Shopify variants that share it).
+create or replace function public.store_stock(p_key text) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select case when count(*) = 0 then null else jsonb_build_object(
+    'available', sum(sv.available), 'on_hand', sum(sv.on_hand), 'price', max(sv.price), 'shopify_vendor', max(sv.vendor),
+    'sold30', case when public.role_rank(public.my_role()) >= 3 then (select coalesce(sum(l.qty),0) from public.shopify_order_lines l
+               where l.variant_id = any(array_agg(sv.variant_id)) and l.day >= current_date - 30 and not l.cancelled) end) end
+  from public.shopify_variants sv where public.shopify_item_key(sv.barcode, sv.sku) = p_key $$;
+revoke all on function public.store_stock(text) from public, anon;
+
+create or replace function public.product_history(p_key text) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare see_cost boolean := public.role_rank(public.my_role()) >= 3;
+begin
+  if not public.is_desk_member() then raise exception 'not-member'; end if;
+  return jsonb_build_object(
+    'title', (select to_jsonb(c) - 'search' - 'description' from public.catalog_titles c where c.item_key = p_key),
+    'store', public.store_stock(p_key),
+    'shopify_cost', case when see_cost then (select max(sc.cost) from public.shopify_variants sv join public.shopify_costs sc on sc.inventory_item_id = sv.inventory_item_id
+                      where public.shopify_item_key(sv.barcode, sv.sku) = p_key) end,
+    'orders', coalesce((select jsonb_agg(jsonb_build_object('po_number', po.po_number, 'vendor', v.name, 'status', po.status, 'qty', l.qty,
+                 'unit_cost', case when see_cost then l.unit_cost end, 'note', l.note, 'at', coalesce(po.sent_at, po.created_at))
+               order by coalesce(po.sent_at, po.created_at) desc)
+               from public.purchase_order_lines l join public.purchase_orders po on po.id = l.po_id join public.vendors v on v.id = po.vendor_id
+               where l.item_key = p_key), '[]'::jsonb));
+end $$;
+revoke all on function public.product_history(text) from public, anon;
+grant execute on function public.product_history(text) to authenticated;
+
+-- Low and selling: available at or below p_min and sold in the last 30 days, by ordering vendor. Managers and the owner.
+create or replace function public.reorder_suggestions(p_min int default 1) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if public.role_rank(public.my_role()) < 3 then raise exception 'manager-only'; end if;
+  return coalesce((select jsonb_agg(x order by x->>'vendor') from (
+    select jsonb_build_object('vendor_id', min(vid::text), 'vendor', coalesce(max(vname), 'No ordering vendor set (Shopify vendor: ' || coalesce(max(sv_vendor),'blank') || ')'),
+      'items', jsonb_agg(jsonb_build_object('item_key', k, 'title', title, 'available', avail, 'sold30', sold) order by sold desc)) as x
+    from (
+      select s.*,
+             (select coalesce(sum(l.qty),0) from public.shopify_order_lines l where l.variant_id = any(s.variants) and l.day >= current_date - 30 and not l.cancelled) as sold,
+             (select coalesce(sum(pl.qty),0) from public.purchase_order_lines pl join public.purchase_orders po on po.id = pl.po_id
+               where pl.item_key = s.k and po.status in ('draft','sent','confirmed')) as on_order
+      from (
+        select public.shopify_item_key(sv.barcode, sv.sku) as k, max(sv.product_title) as title, sum(sv.available) as avail,
+               a.vendor_id as vid, max(v.name) as vname, max(trim(sv.vendor)) as sv_vendor, array_agg(sv.variant_id) as variants
+        from public.shopify_variants sv
+        left join public.vendor_aliases a on lower(a.shopify_vendor) = lower(trim(sv.vendor))
+        left join public.vendors v on v.id = a.vendor_id
+        where coalesce(sv.tracked, true) and coalesce(sv.status,'ACTIVE') = 'ACTIVE'
+        group by 1, a.vendor_id) s
+      where s.k is not null and s.avail <= p_min) t
+    where sold > 0 and on_order = 0
+    group by coalesce(vid::text, 'shopify:' || lower(coalesce(sv_vendor,'')))) g), '[]'::jsonb);
+end $$;
+revoke all on function public.reorder_suggestions(int) from public, anon;
+grant execute on function public.reorder_suggestions(int) to authenticated;
+
+-- Shopify vendor names that are not linked to an ordering vendor yet (for the Catalog imports screen).
+create or replace function public.unlinked_shopify_vendors() returns table(shopify_vendor text, products bigint)
+language sql stable security definer set search_path = public as $$
+  select trim(sv.vendor), count(*) from public.shopify_variants sv
+  where public.role_rank(public.my_role()) >= 3 and nullif(trim(sv.vendor),'') is not null
+    and not exists (select 1 from public.vendor_aliases a where lower(a.shopify_vendor) = lower(trim(sv.vendor)))
+  group by 1 order by 2 desc limit 300 $$;
+revoke all on function public.unlinked_shopify_vendors() from public, anon;
+grant execute on function public.unlinked_shopify_vendors() to authenticated;
+
+-- 10. Every purchase recorded by ISBN, whichever site it was ordered on.
+--   Orders built here record themselves. Orders placed elsewhere (Faire, Amazon, the PRH portal) are recorded when the
+--   shipment is checked in under Receiving (record_outside_order), so each ISBN keeps vendor, date, quantity, cost,
+--   list price, your shelf price and margin.
+alter table public.purchase_order_lines add column if not exists list_price numeric(10,2);
+alter table public.purchase_order_lines add column if not exists store_price numeric(10,2);
+alter table public.purchase_orders add column if not exists source text not null default 'app' check (source in ('app','receiving','import'));
+
+create or replace function public.find_vendor(p_name text) returns uuid language sql stable security definer set search_path = public as $$
+  select coalesce(
+    (select id from public.vendors where lower(name) = lower(trim(p_name))),
+    (select vendor_id from public.vendor_aliases where lower(shopify_vendor) = lower(trim(p_name))),
+    (select id from public.vendors where trim(p_name) <> '' and (lower(trim(p_name)) like '%' || lower(split_part(name,' (',1)) || '%'
+        or lower(name) like '%' || lower(trim(p_name)) || '%') order by length(name) limit 1),
+    (select id from public.vendors where kind = 'marketplace' and name ilike 'faire%' and trim(p_name) ilike 'faire%' limit 1)) $$;
+revoke all on function public.find_vendor(text) from public, anon, authenticated;
+
+-- rows: [{code, title, qty, cost, price}] as Receiving reads them from an invoice or packing slip.
+create or replace function public.record_outside_order(p_vendor_name text, p_ref text, p_day date, p_rows jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare vid uuid := public.find_vendor(p_vendor_name); po uuid; r jsonb; k text; n int := 0;
+begin
+  if public.role_rank(public.my_role()) < 2 then raise exception 'lead-only'; end if;
+  if vid is null then
+    insert into public.vendors (name, kind, status, notes) values (left(trim(p_vendor_name),80), 'other', 'Active', 'Added when a shipment was checked in')
+    on conflict (name) do update set updated_at = now() returning id into vid;
+  end if;
+  if nullif(trim(p_ref),'') is not null then
+    select id into po from public.purchase_orders where vendor_id = vid and vendor_ref = left(trim(p_ref),60) and status <> 'cancelled' limit 1;
+    if po is not null then return jsonb_build_object('po', po, 'lines', 0, 'already', true); end if;
+  end if;
+  insert into public.purchase_orders (vendor_id, status, method, vendor_ref, sent_at, sent_by, source)
+  values (vid, 'received', 'site', left(nullif(trim(p_ref),''),60), coalesce(p_day, current_date)::timestamptz, lower(coalesce(auth.jwt() ->> 'email','')), 'receiving')
+  returning id into po;
+  for r in select * from jsonb_array_elements(coalesce(p_rows,'[]'::jsonb)) loop
+    k := regexp_replace(coalesce(r->>'code',''), '[^0-9Xx]', '', 'g');
+    k := case when k ~ '^97[89][0-9]{10}$' then k when nullif(trim(r->>'code'),'') is not null then 'sku:' || left(trim(r->>'code'),80) end;
+    if k is null or coalesce(nullif(r->>'qty','')::numeric, 0) <= 0 then continue; end if;
+    insert into public.catalog_titles (item_key, title, list_price, source) values (k, left(coalesce(nullif(r->>'title',''), k), 400),
+      case when r->>'price' ~ '^\d+(\.\d+)?$' then (r->>'price')::numeric end, 'receiving') on conflict (item_key) do nothing;
+    insert into public.purchase_order_lines as l (po_id, item_key, qty, unit_cost, list_price, store_price)
+    values (po, k, least(greatest((r->>'qty')::numeric::int,1),9999), case when r->>'cost' ~ '^\d+(\.\d+)?$' then (r->>'cost')::numeric end,
+            case when r->>'price' ~ '^\d+(\.\d+)?$' then (r->>'price')::numeric end,
+            (select max(sv.price) from public.shopify_variants sv where public.shopify_item_key(sv.barcode, sv.sku) = k))
+    on conflict (po_id, item_key) do update set qty = least(l.qty + excluded.qty, 9999);
+    -- the vendor carries it, at this cost
+    insert into public.vendor_offers as o (vendor_id, item_key, unit_cost, source, updated_at)
+    values (vid, k, case when r->>'cost' ~ '^\d+(\.\d+)?$' then (r->>'cost')::numeric end, 'receiving', now())
+    on conflict (vendor_id, item_key) do update set unit_cost = coalesce(excluded.unit_cost, o.unit_cost), updated_at = now();
+    n := n + 1;
+  end loop;
+  return jsonb_build_object('po', po, 'lines', n);
+end $$;
+revoke all on function public.record_outside_order(text, text, date, jsonb) from public, anon;
+grant execute on function public.record_outside_order(text, text, date, jsonb) to authenticated;
+
+-- Fill list and shelf price on lines when an order is sent, so the record keeps what they were that day.
+create or replace function public.po_lines_snapshot() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.status = 'sent' and old.status = 'draft' then
+    update public.purchase_order_lines l set
+      list_price = coalesce(l.list_price, (select list_price from public.catalog_titles where item_key = l.item_key)),
+      store_price = coalesce(l.store_price, (select max(sv.price) from public.shopify_variants sv where public.shopify_item_key(sv.barcode, sv.sku) = l.item_key))
+    where l.po_id = new.id;
+  end if;
+  return new;
+end $$;
+drop trigger if exists po_lines_snapshot on public.purchase_orders;
+create trigger po_lines_snapshot after update of status on public.purchase_orders for each row execute function public.po_lines_snapshot();
+
+-- Purchase history by ISBN (managers and the owner): one row per line ordered, with margin at your shelf price.
+create or replace function public.purchase_history(p_q text default null, p_days int default 365) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if public.role_rank(public.my_role()) < 3 then raise exception 'manager-only'; end if;
+  return coalesce((select jsonb_agg(x order by x->>'at' desc) from (
+    select jsonb_build_object('item_key', l.item_key, 'title', t.title, 'contributors', t.contributors, 'publisher', coalesce(t.imprint, t.publisher),
+      'vendor', v.name, 'po_number', po.po_number, 'vendor_ref', po.vendor_ref, 'status', po.status, 'source', po.source,
+      'at', coalesce(po.sent_at, po.created_at), 'qty', l.qty, 'unit_cost', l.unit_cost,
+      'list_price', coalesce(l.list_price, t.list_price), 'store_price', l.store_price, 'note', l.note,
+      'margin', case when coalesce(l.store_price, l.list_price, t.list_price) > 0 and l.unit_cost is not null
+                then round(1 - l.unit_cost / coalesce(l.store_price, l.list_price, t.list_price), 3) end,
+      'line_cost', case when l.unit_cost is not null then round(l.unit_cost * l.qty, 2) end) as x
+    from public.purchase_order_lines l join public.purchase_orders po on po.id = l.po_id
+    join public.vendors v on v.id = po.vendor_id join public.catalog_titles t on t.item_key = l.item_key
+    where po.status <> 'cancelled' and po.status <> 'draft' and coalesce(po.sent_at, po.created_at) > now() - make_interval(days => greatest(coalesce(p_days,365),1))
+      and (nullif(trim(p_q),'') is null or l.item_key = regexp_replace(p_q,'[^0-9]','','g') or t.title ilike '%' || trim(p_q) || '%' or v.name ilike '%' || trim(p_q) || '%')
+    limit 2000) s), '[]'::jsonb);
+end $$;
+revoke all on function public.purchase_history(text, int) from public, anon;
+grant execute on function public.purchase_history(text, int) to authenticated;

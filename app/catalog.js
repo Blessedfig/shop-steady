@@ -254,6 +254,7 @@
       data.forEach(t => {
         const meta = [t.contributors, [t.imprint || t.publisher, t.format].filter(Boolean).join(', '), t.pub_date ? t.pub_date.slice(0,4) : '', t.list_price != null ? 'List ' + fmt(+t.list_price) : ''].filter(Boolean).join(' · ');
         const card = h('div',{class:'card'}, h('h2',null, t.title + (t.subtitle ? ': ' + t.subtitle : '')), h('p',{class:'small muted'}, meta + ' · ' + t.item_key.replace(/^sku:/, 'SKU ')));
+        if (t.store) card.append(h('p',{class:'small'}, 'In your store: ' + (t.store.available ?? 0) + ' available' + (t.store.price != null ? ' · shelf ' + fmt(+t.store.price) : '') + (t.store.sold30 != null ? ' · sold ' + t.store.sold30 + ' in 30 days' : '')));
         if (!t.offers.length) card.append(h('p',{class:'small'}, 'No vendor list carries this yet. Check a vendor and record what you find.'));
         t.offers.forEach(o => card.append(offerRow(t, o)));
         out.append(card);
@@ -342,7 +343,19 @@
       parsed = null; fi.value = '';
     });
     box.append(f);
-    // 2. vendor cost settings
+    // 2. Shopify: every product becomes searchable and orderable, linked to the vendor you order it through
+    const sh = h('div',{class:'card grid'}, h('h2',null,'Products from Shopify'),
+      h('p',{class:'small muted'},'Every Shopify product with an ISBN or SKU is added to Title search every hour. Link each Shopify vendor name (publisher or Faire brand) to the vendor you order it through, and its products get that vendor’s stock, cost and reorder suggestions. Faire items keep the wholesale cost Faire’s Shopify app recorded.'),
+      h('button',{class:'btn quiet sm', type:'button', onclick:async e => { e.target.disabled = true; const r = await A.sb.rpc('catalog_from_shopify'); e.target.disabled = false; toast(r.error ? r.error.message : r.data.products + ' products, ' + r.data.vendor_links + ' vendor links updated'); }}, 'Update from Shopify now'));
+    const un = await A.sb.rpc('unlinked_shopify_vendors');
+    if (!un.error && un.data.length){
+      sh.append(h('h3',null, un.data.length + ' Shopify vendor names not linked yet'));
+      un.data.slice(0, 60).forEach(u => { const sel = h('select',{'aria-label':'Order ' + u.shopify_vendor + ' through'}, h('option',{value:''},'Order through…'), vendors.map(x => h('option',{value:x.id}, x.name)));
+        sel.addEventListener('change', async () => { if (!sel.value) return; const r = await A.sb.from('vendor_aliases').upsert({shopify_vendor:u.shopify_vendor, vendor_id:sel.value}); toast(r.error ? r.error.message : 'Linked'); });
+        sh.append(h('div',{class:'row small'}, h('span',null, u.shopify_vendor + ' (' + u.products + ')'), sel)); });
+    } else if (un.error) sh.append(h('p',{class:'small muted'},'Connect Shopify first (Shopify screen).'));
+    box.append(sh);
+    // 3. vendor cost settings
     const {data:disc} = await A.sb.from('vendor_discounts').select('*');
     box.append(h('h2',null,'Discounts, stock and ordering links'), h('p',{class:'small muted'},'Cost = list price less the discount. A vendor list with its own discount or a wholesale cost overrides these. Margin at list price equals the discount.'));
     vendors.forEach(x => {
