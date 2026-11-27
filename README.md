@@ -13,6 +13,7 @@ Live test version: https://blessedfig.github.io/shop-steady/app/ (made-up sample
 - **Sign-in and roles:** invite-only sign-in (password or emailed code), stays signed in. Four role tiers (staff, shift lead, manager, owner); the owner switches each module on or off per role.
 - **Business types:** each location picks a type (bookstore, retail shop, café, services or rentals) under **Setup**. The type sets the role names and which modules start on. The owner can rename any role.
 - **Inventory and reorders:** stock by ISBN or SKU, low-stock flags, suggested orders grouped by supplier (CSV download), consignment and used copies.
+- **Orders to vendors:** one order per publisher or distributor built from Title search, stock per line, order file / paste list / email / ordering link, then it waits in Receiving.
 - **Title search and catalogs:** one search across every vendor's title list with stock at each vendor, cost, margin and special-order price; managers load ONIX feeds, CSV title lists, Faire exports and stock files (see `supabase/CATALOG.md`).
 - **Expenses:** receipt log by category and an owner spending card on Home.
 - Installable on phones (PWA), Android test build, accessibility and security checks on every change.

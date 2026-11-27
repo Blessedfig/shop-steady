@@ -10,9 +10,14 @@
 (function(){
   const A = window.SSApp; if (!A) return;
   const {h, head, toast} = A;
-  const SHARED = ['inv','exp','shifts','voice','people','notes','tax','setup','mods','scans','writeoffs','trips','pay','receiving','costs','till','safe']; // 'catalog' is shared separately by count.js
+  const SHARED = ['inv','exp','shifts','voice','people','notes','tax','setup','mods','scans','writeoffs','trips','pay','receiving','costs','till','safe','staffnotes','hr','decisions']; // 'catalog' is shared separately by count.js
   // Only a store manager or the owner can read or save these (supabase/private-areas.sql): staff phones never get them.
-  const PRIVATE = ['writeoffs','trips','pay','costs','safe'];
+  const PRIVATE = ['writeoffs','trips','pay','costs','safe','staffnotes','hr','decisions'];
+  // Newer private areas are shared only after the database confirms it keeps them private (supabase/hr.sql has run);
+  // until then they stay on this device, so a manager's notes can never land somewhere staff could read them.
+  const GATED = ['hr','decisions'];
+  let gateOk = false;
+  const shareable = k => !GATED.includes(k) || gateOk;
   const RANK = {staff:1, lead:2, manager:3, owner:4};
   const VKEY = 'shop-steady-sync';
   let sb = null, ver = {}, base = {}, busy = false, again = false, timer = null, statusEl = null, lastErr = '';
@@ -89,6 +94,7 @@
         if (S[k] === undefined || same(S[k], base[k])) continue;
         if ((k === 'setup' || k === 'mods') && A.myRole !== 'owner') continue;
         if (PRIVATE.includes(k) && !(A.myRole === 'owner' || A.myRole === 'manager')) continue;
+        if (!shareable(k)) continue;
         for (let tries = 0; tries < 4; tries++){
           status('Saving…');
           const snap = clone(S[k]);
@@ -130,6 +136,7 @@
     try { const n = await sb.rpc('my_name'); A.myName = n.error ? null : n.data; } catch(e){ A.myName = null; }
     // this person's own pay rate, if a manager linked their sign-in on the Team screen
     try { const p = await sb.rpc('my_pay'); A.myPay = p.error ? null : p.data; } catch(e){ A.myPay = null; }
+    try { const g = await sb.rpc('private_doc', {k:'hr'}), g2 = await sb.rpc('private_doc', {k:'decisions'}); gateOk = !g.error && g.data === true && !g2.error && g2.data === true; } catch(e){ gateOk = false; }
     applyRole();
     try { base = await IDB.all(); } catch(e){ base = {}; }
     try { status('Loading…'); await pull(true); await push(); status('Saved'); }
@@ -144,7 +151,7 @@
   function onServer(k, id){ const b = base[k]; if (!b) return false;
     if (!seenCache[k] || seenCache[k].v !== ver[k]) seenCache[k] = {v:ver[k], s:JSON.stringify(b)};
     return seenCache[k].s.includes('"id":"'+id+'"'); }
-  A.sync = {start, merge, mergeFirst, pull:() => pull(), push, onServer};
+  A.sync = {gateOk:()=>gateOk, start, merge, mergeFirst, pull:() => pull(), push, onServer};
 
   // ---------- owner: Team logins ----------
   const NAMES = () => ({staff:A.tierName('staff'), lead:A.tierName('lead'), manager:A.tierName('manager'), owner:A.tierName('owner')});

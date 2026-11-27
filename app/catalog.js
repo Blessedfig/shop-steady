@@ -220,6 +220,10 @@
     sel.addEventListener('change', async () => { if (!sel.value) return;
       const {error} = await A.sb.rpc('set_offer_stock', {p_vendor:o.vendor_id, p_item:t.item_key, p_availability:sel.value, p_qty:null});
       toast(error ? 'Could not save: ' + error.message : 'Saved'); if (!error){ o.availability = sel.value; o.checked_at = new Date().toISOString(); A.route(); } });
+    if (window.SSOrders){
+      const q = h('input',{type:'number', min:'1', max:'999', value:'1', 'aria-label':'Copies to order from ' + o.vendor, style:'max-width:5rem'});
+      tools.append(q, h('button',{class:'btn sm', type:'button', onclick:async e => { const note = prompt('Note for this line (optional, e.g. special order for a customer)') || ''; if (await SSOrders.addToOrder(o.vendor_id, t.item_key, +q.value || 1, note)) e.target.textContent = 'Added ✓'; }}, 'Add to order'));
+    }
     tools.append(sel);
     if (o.quote) tools.append(h('button',{class:'btn quiet sm', type:'button', onclick:e => A.copy(t.title + ' (' + t.item_key + ') from ' + o.vendor + ': ' + fmt(+o.quote.price) + (o.cost != null ? ', cost ' + fmt(+o.cost) : ''), e.target)}, 'Copy quote'));
     row.append(tools);
@@ -340,7 +344,7 @@
     box.append(f);
     // 2. vendor cost settings
     const {data:disc} = await A.sb.from('vendor_discounts').select('*');
-    box.append(h('h2',null,'Discounts and stock links'), h('p',{class:'small muted'},'Cost = list price less the discount. A vendor list with its own discount or a wholesale cost overrides these. Margin at list price equals the discount.'));
+    box.append(h('h2',null,'Discounts, stock and ordering links'), h('p',{class:'small muted'},'Cost = list price less the discount. A vendor list with its own discount or a wholesale cost overrides these. Margin at list price equals the discount.'));
     vendors.forEach(x => {
       const mine = (disc||[]).filter(d => d.vendor_id === x.id);
       const form = h('form',{class:'grid g2'},
@@ -349,10 +353,13 @@
         h('label',{class:'f'},'Returnable', h('select',{name:'ret'}, h('option',{value:'true', selected:x.returnable},'Yes'), h('option',{value:'false', selected:!x.returnable},'No'))),
         h('label',{class:'f'},'Free freight over ($)', h('input',{type:'number', name:'ff', min:'0', step:'1', value:x.free_freight_over != null ? String(x.free_freight_over) : ''})),
         h('label',{class:'f'},'Stock check link ({isbn} or {q} is filled in)', h('input',{type:'url', name:'url', maxlength:'300', value:x.stock_check_url || '', placeholder:'https://…search?q={isbn}'})),
+        h('label',{class:'f'},'How they take orders', h('select',{name:'om'}, [['file','Upload or paste ISBNs on their site'],['email','Email'],['site','Order on their website'],['marketplace','Marketplace (Faire, Amazon)'],['phone','Phone'],['edi','EDI (Pubnet)']].map(([k,t]) => h('option',{value:k, selected:k === (x.order_method||'file')}, t)))),
+        h('label',{class:'f'},'Ordering page link', h('input',{type:'url', name:'ou', maxlength:'300', value:x.order_url || '', placeholder:'https://…'})),
+        h('label',{class:'f'},'Order email (if they take orders by email)', h('input',{type:'email', name:'oe', maxlength:'120', value:x.order_email || ''})),
         h('button',{class:'btn sm', type:'submit'},'Save'));
       form.addEventListener('submit', async e => { e.preventDefault(); const d = new FormData(form);
         const r = await A.sb.from('vendors').update({kind:d.get('kind'), default_discount:d.get('disc') === '' ? null : +d.get('disc') / 100, returnable:d.get('ret') === 'true',
-          free_freight_over:d.get('ff') === '' ? null : +d.get('ff'), stock_check_url:String(d.get('url')||'').trim() || null, updated_at:new Date().toISOString()}).eq('id', x.id);
+          free_freight_over:d.get('ff') === '' ? null : +d.get('ff'), stock_check_url:String(d.get('url')||'').trim() || null, order_method:d.get('om') || 'file', order_url:String(d.get('ou')||'').trim() || null, order_email:String(d.get('oe')||'').trim() || null, updated_at:new Date().toISOString()}).eq('id', x.id);
         toast(r.error ? r.error.message : 'Saved'); });
       const dl = h('ul',{class:'small'}, mine.map(d => h('li',null, d.product_class + ', ' + (d.returnable ? 'returnable' : 'non-returnable') + (d.min_qty > 1 ? ', ' + d.min_qty + '+ copies' : '') + ': ' + +(d.discount*100).toFixed(2) + '% ',
         h('button',{class:'btn quiet sm', type:'button', onclick:async () => { const r = await A.sb.from('vendor_discounts').delete().eq('id', d.id); toast(r.error ? r.error.message : 'Removed'); A.route(); }}, 'Remove'))));

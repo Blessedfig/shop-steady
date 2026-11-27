@@ -47,3 +47,21 @@ Costs stay with managers and the owner, the same as the app's other cost records
 - **CSV or TSV**: column names are matched for ISBN/EAN, SKU, title, author, publisher, format, pub date, list price, discount, wholesale cost, availability and quantity.
   Excel files: Save As CSV first.
 - **Stock feeds** (.txt): one ISBN per line followed by 1/0 or Y/N. Updates titles already loaded for that vendor.
+
+## Ordering (Orders screen, `app/orders.js`)
+- **Build:** in Title search, press **Add to order** next to the vendor you want (with an optional note, e.g. a customer's special order).
+  Each vendor has one open order. Anyone signed in can add titles; managers and the owner change quantities, see cost and send.
+- **Check stock:** every line shows that vendor's last known stock, a **Check stock** link to their site, and another active vendor that shows it in stock when this one doesn't.
+- **Send** the way the vendor takes orders (set under Catalog imports > each vendor):
+  - *Upload or paste:* **Copy ISBNs and quantities** and paste into the vendor's quick order (PRH Self-Service: Cart > Add ISBNs/UPCs), or **Download order file (.csv)** to upload (Lunar, Bookazine, IPG).
+  - *Email:* **Write the order email** opens your own email app with the order filled in. You press Send.
+  - *Website or marketplace* (Faire, Amazon Business): opens their ordering page.
+- **Mark as sent** with their order number and expected date. The order then waits in **Receiving** as a shipment with the same lines and costs, ready to check in.
+- The app never places an order or contacts a vendor by itself.
+
+### Sending orders straight from the app later (EDI through Pubnet)
+Pubnet (run by MVB) is the book trade's EDI network: free for booksellers after a one-time $75 setup (often waived), plus a SAN.
+It carries purchase orders and the publisher's acknowledgements, which come back with stock status and pricing. Pubnet expects EDI files over FTP,
+usually from bookstore POS systems. Supporting it would mean a Supabase function that writes the order file and reads the acknowledgements.
+It is worth doing once there are direct terms accounts with the publishers (Pubnet needs those, and prepay accounts mostly don't work).
+Sign-up: info.pubnet.org/services/join-pubnet.

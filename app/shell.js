@@ -70,7 +70,7 @@
 
   // The first level (Bookseller) gets a simple app: a few big buttons, no side menu, no level switcher.
   const SIMPLE = [['checklists','✅','Today\'s checklist'],['till','💵','Cash drawer'],['schedule','📅','My schedule and pay'],
-                  ['teamvoice','💬','Message the owner'],['custvoice','🗣️','A customer asked'],['cashtrain','🎓','Cash training']];
+                  ['teamvoice','💬','Message the owner'],['custvoice','🗣️','A customer asked'],['cashtrain','🎓','Cash training'],['ask','🙋','Ask a question']];
   const simple = () => S.tier === 'staff';
   function simpleHome(v){
     const name = (window.SSApp.myName || '').split(/[ @]/)[0];

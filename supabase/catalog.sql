@@ -397,3 +397,154 @@ begin
 end $$;
 revoke all on function public.copy_app_vendors() from public, anon;
 grant execute on function public.copy_app_vendors() to authenticated;
+
+-- 8. Ordering: purchase orders to each vendor, built from Title search.
+--   Anyone signed in can add titles to a vendor's open order (with a note, e.g. a special order for a customer).
+--   Managers and the owner set quantities, see cost, and mark an order sent, confirmed or cancelled.
+--   The app makes each vendor's order file (ISBN + quantity for PRH Self-Service, Bookazine, IPG, Lunar...),
+--   opens the vendor's ordering page or drafts an email; sending through EDI (Pubnet) needs a Pubnet account first.
+alter table public.vendors add column if not exists order_url text check (length(order_url) <= 300);
+alter table public.vendors add column if not exists order_method text not null default 'file'
+  check (order_method in ('file','email','site','phone','edi','marketplace'));
+alter table public.vendors add column if not exists order_email text check (length(order_email) <= 120);
+alter table public.vendors add column if not exists san text check (san ~ '^[0-9-]{7,12}$'); -- the vendor's SAN, public industry id (not an account number)
+
+create sequence if not exists public.po_number_seq start 1001;
+create table if not exists public.purchase_orders (
+  id          uuid primary key default gen_random_uuid(),
+  po_number   text not null unique default ('PO-' || nextval('public.po_number_seq')),
+  vendor_id   uuid not null references public.vendors(id) on delete restrict,
+  status      text not null default 'draft' check (status in ('draft','sent','confirmed','received','cancelled')),
+  method      text check (method in ('file','email','site','phone','edi','marketplace')),
+  vendor_ref  text check (length(vendor_ref) <= 60), -- the vendor's order or confirmation number
+  notes       text check (length(notes) <= 1000),
+  expected_on date,
+  created_at  timestamptz not null default now(),
+  created_by  text default lower(auth.jwt() ->> 'email'),
+  sent_at     timestamptz,
+  sent_by     text,
+  updated_at  timestamptz not null default now()
+);
+create unique index if not exists purchase_orders_one_draft on public.purchase_orders (vendor_id) where status = 'draft';
+
+create table if not exists public.purchase_order_lines (
+  id          uuid primary key default gen_random_uuid(),
+  po_id       uuid not null references public.purchase_orders(id) on delete cascade,
+  item_key    text not null references public.catalog_titles(item_key) on delete restrict,
+  qty         int not null default 1 check (qty between 1 and 9999),
+  unit_cost   numeric(10,2), -- cost when added or when sent
+  note        text check (length(note) <= 200),
+  added_by    text default lower(auth.jwt() ->> 'email'),
+  added_at    timestamptz not null default now(),
+  unique (po_id, item_key)
+);
+alter table public.purchase_orders enable row level security;
+alter table public.purchase_order_lines enable row level security;
+revoke all on public.purchase_orders, public.purchase_order_lines from anon, authenticated;
+revoke usage on sequence public.po_number_seq from anon, authenticated;
+
+-- Add a title to the vendor's open order (creates the order if needed). Adding it again adds to the quantity.
+create or replace function public.add_to_order(p_vendor uuid, p_item text, p_qty int default 1, p_note text default null) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare po uuid; c numeric; o public.vendor_offers; t public.catalog_titles; v public.vendors;
+begin
+  if not public.is_desk_member() then raise exception 'not-member'; end if;
+  if coalesce(p_qty,0) not between 1 and 9999 then raise exception 'quantity 1 to 9999'; end if;
+  select * into t from public.catalog_titles where item_key = p_item; if t.item_key is null then raise exception 'unknown title'; end if;
+  select * into v from public.vendors where id = p_vendor; if v.id is null then raise exception 'unknown vendor'; end if;
+  select id into po from public.purchase_orders where vendor_id = p_vendor and status = 'draft';
+  if po is null then insert into public.purchase_orders (vendor_id) values (p_vendor) returning id into po; end if;
+  select * into o from public.vendor_offers where vendor_id = p_vendor and item_key = p_item;
+  c := case when o.vendor_id is null then null else public.offer_cost(o, t, v, p_qty) end;
+  if c is null and t.list_price is not null and v.default_discount is not null then c := round(t.list_price * (1 - v.default_discount), 2); end if;
+  insert into public.purchase_order_lines as l (po_id, item_key, qty, unit_cost, note) values (po, p_item, p_qty, c, left(nullif(trim(p_note),''),200))
+  on conflict (po_id, item_key) do update set qty = least(l.qty + excluded.qty, 9999),
+    note = coalesce(nullif(concat_ws('; ', l.note, excluded.note), ''), l.note), unit_cost = coalesce(excluded.unit_cost, l.unit_cost);
+  update public.purchase_orders set updated_at = now() where id = po;
+  return po;
+end $$;
+
+-- Orders with their lines, stock at that vendor, and (for managers and the owner) cost.
+create or replace function public.list_orders(p_status text default null) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare see_cost boolean := public.role_rank(public.my_role()) >= 3;
+begin
+  if not public.is_desk_member() then raise exception 'not-member'; end if;
+  return coalesce((select jsonb_agg(jsonb_build_object(
+      'id', po.id, 'po_number', po.po_number, 'status', po.status, 'method', po.method, 'vendor_ref', po.vendor_ref,
+      'notes', po.notes, 'expected_on', po.expected_on, 'created_at', po.created_at, 'sent_at', po.sent_at, 'sent_by', po.sent_by,
+      'vendor', jsonb_build_object('id', v.id, 'name', v.name, 'order_method', v.order_method, 'order_url', v.order_url,
+                 'order_email', v.order_email, 'stock_check_url', v.stock_check_url, 'lead_days', v.lead_days, 'san', v.san,
+                 'free_freight_over', case when see_cost then v.free_freight_over end),
+      'lines', coalesce((select jsonb_agg(jsonb_build_object(
+          'id', l.id, 'item_key', l.item_key, 'title', t.title, 'contributors', t.contributors, 'format', t.format,
+          'list_price', t.list_price, 'qty', l.qty, 'note', l.note, 'added_by', l.added_by,
+          'unit_cost', case when see_cost then l.unit_cost end,
+          'availability', coalesce(o.availability, 'unknown'), 'stock_qty', o.qty_available, 'checked_at', o.checked_at,
+          'vendor_sku', o.vendor_sku,
+          'better', (select jsonb_build_object('vendor', v2.name, 'availability', o2.availability)
+                      from public.vendor_offers o2 join public.vendors v2 on v2.id = o2.vendor_id
+                      where o2.item_key = l.item_key and o2.vendor_id <> po.vendor_id and o2.availability in ('in_stock','low')
+                        and coalesce(o.availability,'unknown') not in ('in_stock','low') and v2.status = 'Active'
+                      order by o2.availability = 'in_stock' desc limit 1)
+        ) order by t.title) from public.purchase_order_lines l join public.catalog_titles t on t.item_key = l.item_key
+          left join public.vendor_offers o on o.vendor_id = po.vendor_id and o.item_key = l.item_key where l.po_id = po.id), '[]'::jsonb)
+    ) order by (po.status = 'draft') desc, po.created_at desc)
+    from public.purchase_orders po join public.vendors v on v.id = po.vendor_id
+    where (p_status is null and (po.status in ('draft','sent','confirmed') or po.updated_at > now() - interval '60 days')) or po.status = p_status), '[]'::jsonb);
+end $$;
+
+-- Change a line: quantity 0 removes it. Staff may remove or change only lines they added to a draft.
+create or replace function public.set_order_line(p_line uuid, p_qty int, p_note text default null) returns void
+language plpgsql security definer set search_path = public as $$
+declare l public.purchase_order_lines; st text;
+begin
+  if not public.is_desk_member() then raise exception 'not-member'; end if;
+  select * into l from public.purchase_order_lines where id = p_line; if l.id is null then raise exception 'unknown line'; end if;
+  select status into st from public.purchase_orders where id = l.po_id;
+  if st <> 'draft' then raise exception 'This order was already sent'; end if;
+  if public.role_rank(public.my_role()) < 3 and l.added_by is distinct from lower(coalesce(auth.jwt() ->> 'email','')) then raise exception 'manager-only'; end if;
+  if coalesce(p_qty,0) <= 0 then delete from public.purchase_order_lines where id = p_line;
+  else update public.purchase_order_lines set qty = least(p_qty, 9999), note = coalesce(left(nullif(trim(p_note),''),200), note) where id = p_line; end if;
+  update public.purchase_orders set updated_at = now() where id = l.po_id;
+end $$;
+
+-- Managers and the owner: sent (with how and the vendor's order number), confirmed, received or cancelled.
+create or replace function public.set_order_status(p_po uuid, p_status text, p_method text default null, p_ref text default null,
+                                                   p_expected date default null, p_notes text default null) returns void
+language plpgsql security definer set search_path = public as $$
+declare po public.purchase_orders;
+begin
+  if public.role_rank(public.my_role()) < 3 then raise exception 'manager-only'; end if;
+  select * into po from public.purchase_orders where id = p_po; if po.id is null then raise exception 'unknown order'; end if;
+  if p_status not in ('draft','sent','confirmed','received','cancelled') then raise exception 'unknown status'; end if;
+  if p_status = 'sent' and not exists (select 1 from public.purchase_order_lines where po_id = p_po) then raise exception 'The order is empty'; end if;
+  if p_status = 'draft' and po.status <> 'draft' and exists (select 1 from public.purchase_orders where vendor_id = po.vendor_id and status = 'draft' and id <> p_po)
+    then raise exception 'This vendor already has an open order'; end if;
+  update public.purchase_orders set status = p_status,
+    method = coalesce(p_method, method), vendor_ref = coalesce(left(nullif(trim(p_ref),''),60), vendor_ref),
+    expected_on = coalesce(p_expected, expected_on), notes = coalesce(left(nullif(trim(p_notes),''),1000), notes),
+    sent_at = case when p_status = 'sent' and sent_at is null then now() else sent_at end,
+    sent_by = case when p_status = 'sent' and sent_by is null then lower(coalesce(auth.jwt() ->> 'email','')) else sent_by end,
+    updated_at = now()
+  where id = p_po;
+end $$;
+revoke all on function public.add_to_order(uuid, text, int, text) from public, anon;
+revoke all on function public.list_orders(text) from public, anon;
+revoke all on function public.set_order_line(uuid, int, text) from public, anon;
+revoke all on function public.set_order_status(uuid, text, text, text, date, text) from public, anon;
+grant execute on function public.add_to_order(uuid, text, int, text) to authenticated;
+grant execute on function public.list_orders(text) to authenticated;
+grant execute on function public.set_order_line(uuid, int, text) to authenticated;
+grant execute on function public.set_order_status(uuid, text, text, text, date, text) to authenticated;
+
+-- Staff screens list vendors through vendor_directory; it also carries how each vendor takes orders.
+drop view if exists public.vendor_directory;
+create view public.vendor_directory as
+  select id, name, kind, status, covers, how_to_order, website, stock_check_url, contact, email, phone,
+         min_order, lead_days, notes,
+         case when public.role_rank(public.my_role()) >= 3 then terms end as terms,
+         case when public.role_rank(public.my_role()) >= 3 then default_discount end as default_discount,
+         returnable, free_freight_over, updated_at, order_method, order_url
+  from public.vendors where public.is_desk_member();
+grant select on public.vendor_directory to authenticated;
