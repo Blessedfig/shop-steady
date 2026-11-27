@@ -82,6 +82,7 @@
   }
   async function push(){
     if (busy){ again = true; return; } busy = true;
+    let sentAny = false;
     try {
       const S = A.state();
       for (const k of SHARED){
@@ -93,14 +94,14 @@
           const snap = clone(S[k]);
           const {data:nv, error} = await sb.rpc('save_doc', {p_key:k, p_data:snap, p_base:ver[k] || 0});
           if (error) throw error;
-          if (nv > 0){ ver[k] = nv; base[k] = snap; IDB.put(k, snap); break; }
+          if (nv > 0){ ver[k] = nv; base[k] = snap; IDB.put(k, snap); sentAny = true; break; }
           // someone else saved first: get theirs, merge, try again
           const {data:row, error:e2} = await sb.from('app_docs').select('data,version').eq('key', k).single();
           if (e2) throw e2;
           S[k] = merge(base[k], S[k], row.data); base[k] = clone(row.data); ver[k] = row.version; IDB.put(k, base[k]);
         }
       }
-      saveVer(); A.save(true); status('Saved');
+      saveVer(); A.save(true); status('Saved'); if (sentAny) refresh(); // shows the ✓ Sent marks
     } catch(e){ status(navigator.onLine === false ? 'Offline: changes are kept here and sync later' : 'Not synced yet: '+(e.message||'error'), true); }
     finally { busy = false; if (again){ again = false; schedule(); } }
   }
@@ -138,7 +139,12 @@
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pull().then(() => push()).catch(() => {}); });
     window.addEventListener('online', () => push());
   }
-  A.sync = {start, merge, mergeFirst, pull:() => pull(), push};
+  // is this record (by id) on the server's copy yet? Used for the ✓ Sent marks.
+  const seenCache = {};
+  function onServer(k, id){ const b = base[k]; if (!b) return false;
+    if (!seenCache[k] || seenCache[k].v !== ver[k]) seenCache[k] = {v:ver[k], s:JSON.stringify(b)};
+    return seenCache[k].s.includes('"id":"'+id+'"'); }
+  A.sync = {start, merge, mergeFirst, pull:() => pull(), push, onServer};
 
   // ---------- owner: Team logins ----------
   const NAMES = () => ({staff:A.tierName('staff'), lead:A.tierName('lead'), manager:A.tierName('manager'), owner:A.tierName('owner')});

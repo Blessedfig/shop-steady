@@ -96,6 +96,7 @@
       body.replaceChildren(...(rows.length ? rows.slice(0,100).map(x => h('div',{class:'item'},
         h('span',{class:'small muted'}, KINDS[x.kind]+(x.about ? ' · '+x.about : '')+' · '+fmtWhen(x.when)+' · by '+x.by),
         h('p',null,x.text),
+        x.by === me && A.delivery ? A.delivery('notes', x) : null,
         x.original ? h('details',{class:'small muted'}, h('summary',null,'Original words'), h('p',null,x.original)) : null,
         h('div',{class:'row'}, h('button',{class:'linkbtn small',type:'button',onclick:()=>A.copy(fmtWhen(x.when)+(x.about ? ' · '+x.about : '')+'\n'+x.text+'\n(Written by '+x.by+')')},'Copy for a report')))) : [h('p',{class:'muted'},'No notes yet.')])); };
     filt.addEventListener('input', draw); draw();
