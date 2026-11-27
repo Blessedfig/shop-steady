@@ -10,7 +10,7 @@
 (function(){
   const A = window.SSApp; if (!A) return;
   const {h, head, toast} = A;
-  const SHARED = ['inv','exp','shifts','voice','people','notes','tax','setup','mods','scans','writeoffs','trips','pay','receiving','costs','till','safe','staffnotes','hr','decisions','requests']; // 'catalog' is shared separately by count.js
+  const SHARED = ['inv','exp','shifts','voice','people','notes','tax','setup','mods','scans','writeoffs','trips','pay','receiving','costs','till','safe','staffnotes','hr','decisions','requests','training']; // 'catalog' is shared separately by count.js
   // Only a store manager or the owner can read or save these (supabase/private-areas.sql): staff phones never get them.
   const PRIVATE = ['writeoffs','trips','pay','costs','safe','staffnotes','hr','decisions'];
   // Newer private areas are shared only after the database confirms it keeps them private (supabase/hr.sql has run);

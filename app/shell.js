@@ -71,7 +71,7 @@
   // The first level (Front desk) gets a simple app: a few big buttons, no side menu, no level switcher.
   const SIMPLE = [['checklists','✅','Today\'s checklist'],['till','💵','Cash drawer'],['pickup','🛍️','Customer pickup'],['checkin','📦','Check in a delivery'],
                   ['out','📝','We\'re out of…'],['custvoice','🗣️','A customer asked'],['teamvoice','💬','Message the owner'],['schedule','📅','My schedule and pay'],
-                  ['ask','🙋','Ask a question'],['cashtrain','🎓','Cash training']];
+                  ['ask','🙋','Ask a question'],['training','🎓','Training']];
   const simple = () => S.tier === 'staff';
   function simpleHome(v){
     const name = (window.SSApp.myName || '').split(/[ @]/)[0];

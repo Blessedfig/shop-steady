@@ -171,6 +171,7 @@
     ['Someone demands the money in the drawer.', ['Refuse','Give it to them and stay safe, then call 911 and the manager','Chase them'], 1]];
   function train(v){
     const me = actor();
+    v.append(h('a',{class:'small',href:'#/training'},'← All training'));
     v.append(head('Training', 'Cash handling', 'How we handle the drawer and the safe. Read it through, then answer six questions. You need all six right to run the register.'));
     if (trained(me.n)) v.append(h('div',{class:'msg'}, '✓ '+me.n+' passed on '+A.fmtDate(S().till.trained[me.n].slice(0,10))+'. You can read it again any time.'));
     v.append(h('div',{class:'card'}, h('ol',{class:'grid'}, LESSONS.map(([t,b]) => h('li',null, h('b',null,t), h('p',{class:'small'},b))))));
@@ -193,7 +194,7 @@
       h('a',{class:'btn ghost sm',href:trained(who) ? '#/till' : '#/cashtrain'}, trained(who) ? 'Count the drawer in' : 'Cash training')); };
 
   A.register({id:'till', name:'Cash drawer and safe', what:'Count the drawer in and out each shift, paid-outs and safe drops, over or short per person, a safe log for managers, and cash training.', tiers:['staff','lead','manager','owner'],
-    views:{till:{t:'Cash drawer', ic:'💵', render:drawer}, safe:{t:'Safe log', ic:'🔐', render:safe, min:'manager'}, cashtrain:{t:'Cash training', ic:'🎓', render:train}}});
+    views:{till:{t:'Cash drawer', ic:'💵', render:drawer}, safe:{t:'Safe log', ic:'🔐', render:safe, min:'manager'}, cashtrain:{t:'Cash training', ic:'🎓', render:train, hidden:true}}});
   A.ownerHooks.push(v => { const st = T(), o = openSession(), bad = st.sessions.filter(x => x.closeAt && Math.abs(x.diff) > st.allow && !x.note);
     v.append(h('div',{class:'card'}, h('h2',null,'Cash drawer'), h('p',null, o ? o.who+' has the drawer since '+A.fmtTime(o.inAt)+'.' : 'No drawer open.'),
       bad.length ? h('p',null, h('span',{class:'chip red'}, bad.length+' shift'+(bad.length > 1 ? 's' : '')+' over or short by more than '+money(st.allow)), ' ', h('a',{href:'#/till'},'Review')) : null)); });
