@@ -42,10 +42,12 @@
   }
 
   function staff(v){
+    const ta = h('textarea',{name:'what',rows:'3',maxlength:'600',required:true});
     v.append(head('Voice · '+A.site().name, 'Team voice', 'Ideas, needs, worries and gripes, all welcome. Post with your name or anonymously. Managers answer here.'));
     const f = h('form',{class:'card grid'},
       h('label',{class:'f'},'Type', h('select',{name:'kind'}, Object.entries(STAFF).map(([k,t]) => h('option',{value:k},t)))),
-      h('label',{class:'f'},'What\'s on your mind', h('textarea',{name:'what',rows:'3',maxlength:'600',required:true})),
+      h('label',{class:'f'},'What\'s on your mind', ta),
+      A.polishButton ? A.polishButton(ta, {kind:'voice'}) : null,
       h('label',{class:'checkrow'}, h('input',{type:'checkbox',name:'anon'}), 'Post anonymously (managers won\'t see your name)'),
       h('button',{class:'btn',type:'submit'},'Send'));
     f.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(f), anon = !!d.get('anon');

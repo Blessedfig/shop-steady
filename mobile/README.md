@@ -1,4 +1,4 @@
-# Shop Steady on phones (test)
+# Downtown Stube on phones (test)
 
 There are two ways to put the test app on a phone. Both open the live test app at
 https://blessedfig.github.io/shop-steady/app/, so every update to the app shows up without reinstalling.
