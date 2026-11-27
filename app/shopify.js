@@ -1,6 +1,8 @@
 // Shopify (store manager and owner): the live link with the store's Shopify.
 //   - Status: connected or not, when it last synced (a timer syncs every 15 minutes; "Sync now" runs one at once).
 //   - Sales by day, top sellers of the last 30 days with what is left on the shelf, and stock value insights.
+//   - Online store: the owner's rules for what shows on the website (in stock with a buffer, photo, ISBN, ships);
+//     the app switches products on and off for the Online Store and every change can be undone.
 //   - Changes for Shopify: a manager proposes a new cost or vendor for an item; nothing goes to Shopify until the
 //     owner taps "Send to Shopify". Each change shows whether it worked.
 // The Shopify access token never reaches this page: it stays in the database, readable only by the server functions.
@@ -33,12 +35,15 @@
     box.textContent = '';
     box.append(statusCard(st));
     if (!st || !st.connected) return;
-    const [days, sellers, sum, changes] = await Promise.all([
+    const [days, sellers, sum, changes, online, recent] = await Promise.all([
       A.sb.from('shopify_sales_day').select('*').order('day',{ascending:false}).limit(14),
       A.sb.from('shopify_sellers_30').select('*').order('qty30',{ascending:false}).limit(200),
       A.sb.rpc('shopify_stock_summary'),
-      A.sb.from('shopify_changes').select('*').in('status',['pending','failed']).order('id',{ascending:false}).limit(100)]);
+      A.sb.from('shopify_changes').select('*').in('status',['pending','failed']).order('id',{ascending:false}).limit(100),
+      A.sb.rpc('online_review'),
+      A.sb.from('online_changes').select('*').order('id',{ascending:false}).limit(30)]);
     box.append(salesCard(days.data || []), insightsCard(sum.data, sellers.data || []), reorderCard(sellers.data || []), sellersCard(sellers.data || []), changesCard(changes.data || []));
+    if (!online.error && online.data) box.append(onlineCard(online.data, recent.data || []));
   }
 
   function statusCard(st){
@@ -151,6 +156,58 @@
         h('div',{class:'row'}, vi, h('button',{class:'btn quiet sm',type:'button',onclick:()=>add('vendor', x.vendor, vi.value.trim())},'Propose vendor')));
     }
     return h('div',null, q, out);
+  }
+
+  // ---------- online store: only what passes the rules shows on the website ----------
+  function onlineCard(o, recent){
+    const r = o.rules || {};
+    const c = h('div',{class:'card'}, h('h2',null,'Online store'),
+      h('p',{class:'small muted'},'Every product stays on the register. The website only shows a product that passes these rules, so customers can\'t order what isn\'t on the shelf or shouldn\'t ship. Tag a product "online" in Shopify to always show it (with 1 or more), or "not-online" to never show it.'));
+    if (!o.connected_channel) c.append(h('p',null, h('span',{class:'chip red'},'Needs permission'), ' Connect Shopify again (Connection > Reconnect) so the app may switch products on and off for the Online Store.'));
+    c.append(h('p',null, h('b',null, String(o.want)), ' of '+o.products+' products pass the rules · ', h('b',null, String(o.online)), ' online now'));
+    if (o.known) c.append(h('p',null, h('b',null, String(o.to_hide)), ' to hide and ', h('b',null, String(o.to_show)), ' to show ',
+      h('span',{class:'chip '+(r.enabled ? (r.auto ? 'calm' : '') : '')}, !r.enabled ? 'Rules off: nothing changes' : r.auto ? 'Runs on its own after each sync' : 'Applies when the owner taps')));
+    else c.append(h('p',{class:'small muted'},'Which products are online now shows after the next product export.'));
+    const reasons = Object.entries(o.reasons || {}).sort((a,b) => b[1]-a[1]);
+    if (reasons.length) c.append(h('ul',{class:'small'}, reasons.map(([k,n]) => h('li',null, n+' online now but '+k.toLowerCase()))));
+    const list = (title, rows, withWhy) => rows.length ? h('details',null, h('summary',{class:'small'}, title+' (first '+rows.length+')'),
+      h('table',{class:'tbl'}, h('tbody',null, rows.map(x => h('tr',null, h('td',null, x.title), h('td',{class:'small muted'}, x.vendor || ''), h('td',null, String(x.available)), withWhy ? h('td',{class:'small'}, x.reason) : null))))) : null;
+    c.append(list('Would hide', o.hide_sample || [], true), list('Would show', o.show_sample || [], false));
+    if (isOwner()){
+      const f = {
+        enabled: h('input',{type:'checkbox'}), auto: h('input',{type:'checkbox'}),
+        min_available: h('input',{type:'number',min:'1',step:'1',value:String(r.min_available ?? 2),style:'max-width:5rem'}),
+        need_photo: h('input',{type:'checkbox'}), need_isbn: h('input',{type:'checkbox'}),
+        skip_vendors: h('textarea',{rows:'2'}), skip_types: h('textarea',{rows:'2'}), skip_tags: h('textarea',{rows:'2'}), skip_categories: h('textarea',{rows:'2'})};
+      ['enabled','auto','need_photo','need_isbn'].forEach(k => f[k].checked = !!r[k]);
+      ['skip_vendors','skip_types','skip_tags','skip_categories'].forEach(k => f[k].value = (r[k] || []).join(', '));
+      const lab = (el, text) => h('label',{class:'row small'}, el, ' '+text);
+      const area = (el, text) => h('label',{class:'small'}, text, el);
+      const save = h('button',{class:'btn quiet sm',type:'button'},'Save rules');
+      save.onclick = () => busy(save, 'Saving…', async () => {
+        const list = k => f[k].value.split(',').map(x => x.trim()).filter(Boolean);
+        const {error} = await A.sb.rpc('online_save_rules', {p:{enabled:f.enabled.checked, auto:f.auto.checked, min_available:Number(f.min_available.value)||2,
+          need_photo:f.need_photo.checked, need_isbn:f.need_isbn.checked, skip_vendors:list('skip_vendors'), skip_types:list('skip_types'), skip_tags:list('skip_tags'), skip_categories:list('skip_categories')}});
+        if (error) throw new Error(error.message); toast('Rules saved'); A.route(); });
+      c.append(h('details',null, h('summary',null,'Rules'),
+        lab(f.enabled,'Rules on (off: the app only shows what it would do)'), lab(f.auto,'Run on its own after each product sync'),
+        h('label',{class:'row small'}, 'Show online when at least ', f.min_available, ' available (the last copy stays on the shelf)'),
+        lab(f.need_photo,'Needs a photo'), lab(f.need_isbn,'Books need an ISBN or barcode'),
+        area(f.skip_vendors,'Never online from these vendors (food, candy)'), area(f.skip_types,'Never online: these product types'),
+        area(f.skip_tags,'Never online: products with these tags'), area(f.skip_categories,'Never online: categories starting with'),
+        h('div',{class:'row'}, save)));
+      if (r.enabled && (o.to_hide || o.to_show) && o.connected_channel){
+        const go = h('button',{class:'btn',type:'button'},'Apply to the online store now');
+        go.onclick = () => busy(go, 'Working…', async () => { const x = await call('shopify-sync',{action:'online'}); toast(x.hidden+' hidden, '+x.shown+' shown'+(x.failed ? ', '+x.failed+' failed' : '')+(x.left ? ', '+x.left+' left for the next run' : '')); A.route(); });
+        c.append(h('div',{class:'row'}, go));
+      }
+    }
+    if (recent.length) c.append(h('details',null, h('summary',{class:'small'},'Recent online store changes'),
+      h('div',{class:'list'}, recent.map(x => h('div',{class:'item'},
+        h('span',{class:'small'}, h('b',null, x.action === 'show' ? 'Shown' : 'Hidden'), ' · '+(x.title || '#'+x.product_id)+' · '+(x.reason || '')+' · '+A.fmtDate(x.at)),
+        x.status === 'failed' ? h('span',{class:'chip red'},'Failed: '+(x.error || '')) : x.status === 'undone' ? h('span',{class:'chip'},'Undone') : null,
+        isOwner() && x.status === 'applied' ? h('button',{class:'linkbtn small',type:'button',onclick:async(e)=>busy(e.target,'Undoing…',async()=>{ await call('shopify-sync',{action:'online-undo', ids:[x.id]}); toast('Undone; tagged so it stays that way'); A.route(); })},'Undo') : null)))));
+    return c;
   }
 
   A.register({id:'shopify', name:'Shopify live sync', what:'Sales and stock from Shopify every 15 minutes, top sellers, what to reorder, stock value, and cost and vendor changes that go to Shopify after the owner approves.', tiers:['manager','owner'],
