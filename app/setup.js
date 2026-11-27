@@ -33,6 +33,19 @@
     });
     v.append(form);
 
+    // Your data is yours: one file with everything this device holds for every location (a backup you control,
+    // and the way to leave at any time). Settings for this device only (which role you're viewing as) are left out.
+    const LOCAL_ONLY = ['tier','site','kioskWho','schedWeek','tsWeek','impactRange','cover','lastExport'];
+    v.append(h('div',{class:'card grid'}, h('h2',null,'Download all your data'),
+      h('p',{class:'small muted'},'One file with your schedules, time clock, checklists, customers, special orders, vendors, receiving, cash logs, expenses, events and notes. Keep it with your backups. It is yours if you ever stop using Downtown Stube.'),
+      h('p',{class:'small muted'},'It holds staff and customer details, so store it somewhere private, like an encrypted drive or your password manager\'s file vault.'),
+      h('div',{class:'row'}, h('button',{class:'btn ghost',type:'button',onclick:()=>{
+        const out = {}; Object.keys(S()).filter(k => !LOCAL_ONLY.includes(k)).forEach(k => out[k] = S()[k]);
+        A.download('downtown-stube-data-'+A.isoDay(new Date())+'.json','application/json', JSON.stringify({app:'Downtown Stube', exported:new Date().toISOString(), by:A.me(), data:out}, null, 1));
+        S().lastExport = new Date().toISOString(); A.save(true); A.route();
+      }},'Download all data (.json)')),
+      S().lastExport ? h('p',{class:'small'},'Last downloaded on this device: '+A.fmtTime(S().lastExport)) : h('p',{class:'small'},'Not downloaded on this device yet. Once a month is a good habit.')));
+
     v.append(h('div',{class:'card'}, h('h2',null,'Sample data'),
       h('p',{class:'small muted'},'This test version keeps everything in this browser only. Starting over puts the made-up sample data back.'),
       h('div',{class:'row'}, h('button',{class:'btn ghost sm',type:'button',onclick:()=>{
@@ -41,6 +54,11 @@
         A.save(); A.fillSwitchers(); toast('Sample data restored'); A.route();
       }},'Start over with sample data'))));
   }
+
+  A.ownerHooks.push(v => { const last = A.state().lastExport, days = last ? (Date.now() - new Date(last)) / 864e5 : 999;
+    if (A.demo || days < 31) return;
+    v.append(h('div',{class:'card'}, h('h2',null,'Back up your data'), h('p',null, last ? 'Your last download from this device was '+Math.floor(days)+' days ago. ' : 'You haven\'t downloaded a copy of your data on this device yet. '),
+      h('a',{href:'#/setup'},'Download it under Setup'))); });
 
   A.register({id:'setup', name:'Setup', what:'Location name, business type and role names.', tiers:['owner'],
     views:{setup:{t:'Setup', ic:'⚙️', render:setup}}});
