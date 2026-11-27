@@ -93,3 +93,21 @@ Every 15 minutes, right after the Shopify sync, the app compares each item's on-
 - **Stock went up with no order in the app** (bought on Faire, Amazon or a portal and received into Shopify): it is recorded in Purchase history as an arrival from the vendor that item is linked to, at the Shopify cost. One record per vendor per day.
   If the same shipment is later checked in under Receiving, the automatic entry is replaced, so nothing is counted twice.
 - Limits: the app sees the *net* change every 15 minutes, so a sale in the same window hides that many arrivals. A stock-count correction or customer return that raises stock is recorded as an arrival too; fix it from Purchase history if that happens.
+
+## Create a Shopify product from Title search
+Managers and the owner see **Create in Shopify** on any title that isn't in the store yet. It makes the product with the ISBN as barcode and SKU,
+your shelf price (list price by default), your cost from the vendor you pick, the publisher as Shopify vendor, the description and an Open Library cover,
+and stock at 0 (Receiving or Shopify adds copies). It goes on Point of Sale, and on the website unless you untick it (leave 18+ titles off the website).
+The vendor you pick is linked to that publisher name, so later orders and check-ins track through it.
+Needs: the updated `shopify-sync` function deployed. Putting products on sales channels needs Shopify's publications permission,
+added in Nov 2026: press **Connect Shopify** once more on the Shopify screen to allow it. Until then the product is created but not on a channel.
+
+## Setting up new vendors (Vendor setup screen)
+- Upload supplier notes, research, a terms sheet or an account application (PDF, Word, Markdown or text). The `doc-import` function (mode "vendors")
+  proposes each supplier: what it covers, how to order, application link or email, what the application asks for, and a checklist marked
+  You / App / Vendor. Tax ids, SSNs and card or bank numbers are removed in the browser before sending, and again on the server.
+- Nothing is saved until you press **Save checked vendors**. New names are added; existing vendors only get empty fields filled and new steps added,
+  and an Active vendor's status is never changed.
+- **Accounts in progress** lists every vendor that isn't Active or Not using, with status (To apply, Applying, Approved...), the date applied,
+  the checklist, the application link and the documents you kept with it. Documents are readable by managers and the owner only.
+- Needs the Supabase secret `ANTHROPIC_API_KEY` (already used by Receiving) and the updated `doc-import` function deployed.

@@ -901,3 +901,89 @@ do $$ begin
     perform cron.schedule('auto-receive', '3-59/15 * * * *', 'select public.auto_receive_from_shopify()');
   end if;
 end $$;
+
+-- 12. Setting up new vendors: account applications and the documents behind them.
+--   A manager or the owner uploads notes, terms or an application (Vendor setup screen). The doc-import function
+--   reads it and proposes vendor records with a setup checklist; nothing is saved until a person approves.
+--   Never store account numbers, passwords, tax ids, bank details or signatures here.
+alter table public.vendors drop constraint if exists vendors_status_check;
+alter table public.vendors add constraint vendors_status_check
+  check (status in ('To apply','Applying','Approved, not ordering yet','Active','Paused','Not using'));
+alter table public.vendors add column if not exists apply_url text check (length(apply_url) <= 300);
+alter table public.vendors add column if not exists apply_email text check (length(apply_email) <= 120);
+alter table public.vendors add column if not exists needs text check (length(needs) <= 600);      -- what the application asks for
+alter table public.vendors add column if not exists applied_on date;
+alter table public.vendors add column if not exists setup_steps jsonb not null default '[]'::jsonb; -- [{step, who, done}]
+
+create table if not exists public.vendor_docs (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null check (length(name) between 1 and 200),
+  body        text not null check (length(body) <= 200000),
+  vendor_ids  uuid[] not null default '{}',
+  uploaded_by text not null default lower(coalesce(auth.jwt() ->> 'email','')),
+  uploaded_at timestamptz not null default now()
+);
+create index if not exists vendor_docs_vendors on public.vendor_docs using gin (vendor_ids);
+alter table public.vendor_docs enable row level security;
+revoke all on public.vendor_docs from anon;
+grant select, delete on public.vendor_docs to authenticated;
+drop policy if exists "managers read vendor docs" on public.vendor_docs;
+create policy "managers read vendor docs" on public.vendor_docs for select to authenticated using (public.role_rank(public.my_role()) >= 3);
+drop policy if exists "managers delete vendor docs" on public.vendor_docs;
+create policy "managers delete vendor docs" on public.vendor_docs for delete to authenticated using (public.role_rank(public.my_role()) >= 3);
+
+-- Save approved vendors from a document. New names are added; for existing vendors only empty fields are filled,
+-- new checklist steps are added, and an Active vendor's status is never changed. Returns the ids touched.
+create or replace function public.apply_vendor_setup(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare x jsonb; vid uuid; made int := 0; changed int := 0; ids uuid[] := '{}'; st text; disc numeric;
+  clip constant text[] := array['covers','how_to_order','website','stock_check_url','contact','email','phone','terms','min_order','notes','order_url','order_email','apply_url','apply_email','needs'];
+begin
+  if public.role_rank(public.my_role()) < 3 then raise exception 'manager-only'; end if;
+  for x in select * from jsonb_array_elements(coalesce(p->'vendors','[]')) limit 60 loop
+    continue when coalesce(trim(x->>'name'),'') = '';
+    st := case when x->>'status' in ('To apply','Applying','Approved, not ordering yet','Active','Paused','Not using') then x->>'status' else 'To apply' end;
+    disc := case when (x->>'default_discount') ~ '^[0-9.]+$' then (x->>'default_discount')::numeric end;
+    if disc >= 1 then disc := disc / 100; end if;
+    if disc >= 0.95 then disc := null; end if;
+    select id into vid from public.vendors where lower(name) = lower(trim(x->>'name'));
+    if vid is null then
+      insert into public.vendors (name, kind, status, covers, how_to_order, website, stock_check_url, contact, email, phone, terms,
+        default_discount, returnable, min_order, notes, order_method, order_url, order_email, apply_url, apply_email, needs, setup_steps)
+      values (left(trim(x->>'name'),80),
+        case when x->>'kind' in ('publisher','distributor','wholesaler','marketplace','audiobook','general','consignor','other') then x->>'kind' else 'distributor' end,
+        st, left(nullif(x->>'covers',''),400), left(nullif(x->>'how_to_order',''),200), left(nullif(x->>'website',''),200),
+        left(nullif(x->>'stock_check_url',''),300), left(nullif(x->>'contact',''),80), left(nullif(x->>'email',''),120), left(nullif(x->>'phone',''),40),
+        left(nullif(x->>'terms',''),400), disc, coalesce((x->>'returnable')::boolean, true), left(nullif(x->>'min_order',''),60),
+        left(nullif(x->>'notes',''),1000),
+        case when x->>'order_method' in ('file','email','site','phone','edi','marketplace') then x->>'order_method' else 'file' end,
+        left(nullif(x->>'order_url',''),300), left(nullif(x->>'order_email',''),120), left(nullif(x->>'apply_url',''),300),
+        left(nullif(x->>'apply_email',''),120), left(nullif(x->>'needs',''),600), coalesce(x->'steps','[]'))
+      returning id into vid;
+      made := made + 1;
+    else
+      update public.vendors v set
+        covers = coalesce(v.covers, left(nullif(x->>'covers',''),400)), how_to_order = coalesce(v.how_to_order, left(nullif(x->>'how_to_order',''),200)),
+        website = coalesce(v.website, left(nullif(x->>'website',''),200)), stock_check_url = coalesce(v.stock_check_url, left(nullif(x->>'stock_check_url',''),300)),
+        contact = coalesce(v.contact, left(nullif(x->>'contact',''),80)), email = coalesce(v.email, left(nullif(x->>'email',''),120)),
+        phone = coalesce(v.phone, left(nullif(x->>'phone',''),40)), terms = coalesce(v.terms, left(nullif(x->>'terms',''),400)),
+        default_discount = coalesce(v.default_discount, disc), min_order = coalesce(v.min_order, left(nullif(x->>'min_order',''),60)),
+        notes = coalesce(v.notes, left(nullif(x->>'notes',''),1000)), order_url = coalesce(v.order_url, left(nullif(x->>'order_url',''),300)),
+        order_email = coalesce(v.order_email, left(nullif(x->>'order_email',''),120)), apply_url = coalesce(v.apply_url, left(nullif(x->>'apply_url',''),300)),
+        apply_email = coalesce(v.apply_email, left(nullif(x->>'apply_email',''),120)), needs = coalesce(v.needs, left(nullif(x->>'needs',''),600)),
+        status = case when v.status = 'Active' or x->>'status' is null then v.status else st end,
+        setup_steps = v.setup_steps || coalesce((select jsonb_agg(s) from jsonb_array_elements(coalesce(x->'steps','[]')) s
+                        where not exists (select 1 from jsonb_array_elements(v.setup_steps) o where lower(o->>'step') = lower(s->>'step'))), '[]'),
+        updated_at = now(), updated_by = lower(auth.jwt() ->> 'email')
+      where v.id = vid;
+      changed := changed + 1;
+    end if;
+    ids := ids || vid;
+  end loop;
+  if coalesce(p->>'doc_name','') <> '' and coalesce(p->>'doc_text','') <> '' then
+    insert into public.vendor_docs (name, body, vendor_ids) values (left(p->>'doc_name',200), left(p->>'doc_text',200000), ids);
+  end if;
+  return jsonb_build_object('created', made, 'updated', changed, 'ids', to_jsonb(ids));
+end $$;
+revoke all on function public.apply_vendor_setup(jsonb) from public, anon;
+grant execute on function public.apply_vendor_setup(jsonb) to authenticated;

@@ -229,6 +229,46 @@
     row.append(tools);
     return row;
   }
+  // Not in the store yet: make it a Shopify product (ISBN, price, cost, cover) without leaving the app.
+  function shopifyBox(t){
+    const wrap = h('div',{class:'row'});
+    const open = h('button',{class:'btn quiet sm', type:'button'}, 'Create in Shopify');
+    wrap.append(h('span',{class:'small muted'}, 'Not in your Shopify store yet.'), open);
+    open.addEventListener('click', () => {
+      const offers = t.offers.filter(o => o.status === 'Active' || !o.status);
+      const best = offers.filter(o => o.cost != null).sort((a,b) => (['in_stock','low'].includes(b.availability) - ['in_stock','low'].includes(a.availability)) || a.cost - b.cost)[0];
+      const price = h('input',{type:'number', step:'0.01', min:'0.01', required:true, value:t.list_price != null ? (+t.list_price).toFixed(2) : (best && best.quote ? (+best.quote.price).toFixed(2) : ''), 'aria-label':'Shelf price', style:'max-width:7rem'});
+      const cost = h('input',{type:'number', step:'0.01', min:'0', value:best ? (+best.cost).toFixed(2) : '', 'aria-label':'Your cost', style:'max-width:7rem'});
+      const ven = h('select',{'aria-label':'Vendor you order it from'}, h('option',{value:''}, 'Order from: not set'), offers.map(o => h('option',{value:o.vendor_id, selected:best && o.vendor_id === best.vendor_id}, o.vendor)));
+      const shopVendor = h('input',{type:'text', maxlength:'255', value:t.publisher || t.imprint || '', 'aria-label':'Vendor name in Shopify (usually the publisher)'});
+      const web = h('input',{type:'checkbox', checked:true}), draft = h('input',{type:'checkbox'}), so = h('input',{type:'checkbox'});
+      ven.addEventListener('change', () => { const o = offers.find(x => x.vendor_id === ven.value); if (o && o.cost != null) cost.value = (+o.cost).toFixed(2); });
+      const go = h('button',{class:'btn sm', type:'submit'}, 'Create product');
+      const f = h('form',{class:'grid small'},
+        h('label',null,'Shelf price ', price, t.list_price != null ? h('span',{class:'muted'}, ' (list ' + fmt(+t.list_price) + ')') : null),
+        h('label',null,'Your cost ', cost),
+        h('label',null,'Ordered through ', ven),
+        h('label',null,'Shopify vendor ', shopVendor),
+        h('label',null, web, ' Also show on the website (leave off for 18+ titles)'),
+        h('label',null, so, ' Tag as a special order'),
+        h('label',null, draft, ' Save as a draft in Shopify'),
+        h('div',{class:'row'}, go, h('button',{class:'btn quiet sm', type:'button', onclick:() => wrap.replaceChildren(h('span',{class:'small muted'}, 'Not in your Shopify store yet.'), open)}, 'Cancel')));
+      f.addEventListener('submit', async e => {
+        e.preventDefault(); go.disabled = true; go.textContent = 'Creating…';
+        const {data, error} = await A.sb.functions.invoke('shopify-sync', {body:{action:'create', item_key:t.item_key, price:+price.value, cost:cost.value === '' ? null : +cost.value,
+          vendor:shopVendor.value.trim(), vendor_id:ven.value || null, pos_only:!web.checked, status:draft.checked ? 'DRAFT' : 'ACTIVE', special_order:so.checked}});
+        let msg = data && data.error;
+        if (error && !msg){ try { msg = (await error.context.json()).error; } catch(_){ msg = error.message; } }
+        if (msg){ go.disabled = false; go.textContent = 'Create product'; toast(msg === 'not-connected' ? 'Connect Shopify first (Shopify screen).' : msg); return; }
+        t.store = {available:0, on_hand:0, price:+price.value};
+        wrap.replaceChildren(h('p',{class:'small'}, 'In Shopify now' + (data.channels ? ' (' + data.channels + ')' : '') + '. ',
+          h('a',{href:data.admin_url, target:'_blank', rel:'noopener'}, 'Open in Shopify')));
+      });
+      wrap.replaceChildren(f);
+      price.focus();
+    });
+    return wrap;
+  }
   let lastQ = '', lastRes = null;
   function titlesView(v){
     v.append(head('Buying · ' + A.site().name, 'Title search', 'One search across every vendor’s title list: who has it, their stock, and what to charge for a special order.'));
@@ -255,6 +295,7 @@
         const meta = [t.contributors, [t.imprint || t.publisher, t.format].filter(Boolean).join(', '), t.pub_date ? t.pub_date.slice(0,4) : '', t.list_price != null ? 'List ' + fmt(+t.list_price) : ''].filter(Boolean).join(' · ');
         const card = h('div',{class:'card'}, h('h2',null, t.title + (t.subtitle ? ': ' + t.subtitle : '')), h('p',{class:'small muted'}, meta + ' · ' + t.item_key.replace(/^sku:/, 'SKU ')));
         if (t.store) card.append(h('p',{class:'small'}, 'In your store: ' + (t.store.available ?? 0) + ' available' + (t.store.price != null ? ' · shelf ' + fmt(+t.store.price) : '') + (t.store.sold30 != null ? ' · sold ' + t.store.sold30 + ' in 30 days' : '')));
+        else if (rank() >= 3) card.append(shopifyBox(t));
         if (!t.offers.length) card.append(h('p',{class:'small'}, 'No vendor list carries this yet. Check a vendor and record what you find.'));
         t.offers.forEach(o => card.append(offerRow(t, o)));
         out.append(card);
@@ -390,6 +431,113 @@
     });
   }
 
+  // ---------- setting up new vendors (managers and owners) ----------
+  // Upload notes, research, terms or an application; the AI proposes vendor records and a checklist; a person approves.
+  const SETUP = ['To apply','Applying','Approved, not ordering yet','Active','Paused','Not using'];
+  const WHO = {owner:'You', app:'App', vendor:'Vendor'};
+  const loadScript = src => new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = src; sc.onload = ok; sc.onerror = () => no(new Error('Could not load '+src)); document.head.append(sc); });
+  let pdfReady = null;
+  async function fileText(f){
+    const buf = await f.arrayBuffer();
+    if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf'){
+      pdfReady = pdfReady || loadScript('vendor/pdf.min.js').then(() => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js'; });
+      await pdfReady; const doc = await window.pdfjsLib.getDocument({data:buf}).promise; let out = '';
+      for (let i = 1; i <= doc.numPages; i++){ const pg = await doc.getPage(i), tc = await pg.getTextContent(); out += tc.items.map(t => t.str).join(' ') + '\n'; }
+      return out; }
+    if (/\.docx$/i.test(f.name)){ if (!window.mammoth) await loadScript('vendor/mammoth.browser.min.js'); return (await window.mammoth.extractRawText({arrayBuffer:buf})).value; }
+    return new TextDecoder().decode(buf);
+  }
+  // tax ids, SSNs and long card or bank numbers never leave the browser
+  const unprivate = t => t.replace(/\b\d{3}-\d{2}-\d{4}\b|\b\d{2}-\d{7}\b|\b(?:\d[ -]?){12,19}\b/g, m => /^97[89]\d{10}$/.test(m.replace(/\D/g,'')) ? m : '[removed]');
+
+  async function setupView(v){
+    v.append(head('Buying · ' + A.site().name, 'Vendor setup', 'Open accounts with new suppliers. Upload your notes or an application and the app fills in the vendor and the steps left. No passwords, account numbers, tax ids or signatures here.'));
+    if (!live()) return notLive(v);
+    if (rank() < 3){ v.append(h('div',{class:'card'}, h('p',null,'Managers and the owner set up vendors.'))); return; }
+    // 1. upload
+    const fi = h('input',{type:'file', accept:'.pdf,.docx,.md,.txt,.csv,.html', required:true, 'aria-label':'Document about suppliers'});
+    const go = h('button',{class:'btn', type:'submit'}, 'Read it');
+    const out = h('div');
+    const f = h('form',{class:'card'}, h('h2',null,'Add vendors from a document'),
+      h('p',{class:'small muted'},'Supplier research, a terms sheet, a rep’s email, an account application (PDF, Word, text or Markdown). Nothing is saved until you approve it.'),
+      h('div',{class:'row'}, fi, go), out);
+    f.addEventListener('submit', async e => {
+      e.preventDefault(); const file = fi.files[0]; if (!file) return;
+      go.disabled = true; out.replaceChildren(h('p',{class:'muted'},'Reading ' + file.name + '… (about a minute for long notes)'));
+      try {
+        const text = unprivate(await fileText(file));
+        if (!text.trim()) throw new Error('No text found in that file. If it is a scan, type the key details into a note instead.');
+        const {data, error} = await A.sb.functions.invoke('doc-import', {body:{mode:'vendors', text:text.slice(0, 200000), source:file.name}});
+        let msg = data && data.error;
+        if (error && !msg){ try { msg = (await error.context.json()).error; } catch(_){ msg = error.message; } }
+        if (msg) throw new Error({'not-configured':'The reading assistant is not set up yet (Supabase secret ANTHROPIC_API_KEY).', 'too-long':'That document is too long. Split it in parts.', 'manager-only':'Managers and the owner set up vendors.'}[msg] || 'Could not read it: ' + msg);
+        review(data.vendors || [], file.name, text);
+      } catch(err){ out.replaceChildren(h('p',{class:'msg err'}, err.message)); }
+      go.disabled = false;
+    });
+    v.append(f);
+    function review(list, name, text){
+      out.replaceChildren();
+      if (!list.length){ out.append(h('p',null,'No suppliers found in that document.')); return; }
+      const known = new Set((vendors || []).map(x => x.name.toLowerCase()));
+      const picks = list.map(x => {
+        const cb = h('input',{type:'checkbox', checked:true, 'aria-label':'Save ' + x.name});
+        const isNew = !known.has(x.name.toLowerCase());
+        out.append(h('div',{class:'item'},
+          h('label',{class:'row'}, cb, h('b',null, x.name), h('span',{class:'chip ' + (isNew ? 'calm' : 'grey')}, isNew ? 'New' : 'Fills blanks only'), h('span',{class:'chip amber'}, x.status)),
+          x.covers ? h('p',{class:'small'}, 'Covers: ' + x.covers) : null,
+          x.apply_url || x.apply_email ? h('p',{class:'small'}, 'Apply: ' + [x.apply_url, x.apply_email].filter(Boolean).join(' · ')) : null,
+          x.needs ? h('p',{class:'small'}, 'Needs: ' + x.needs) : null,
+          x.steps.length ? h('ul',{class:'small'}, x.steps.map(st => h('li',null, (st.done ? '✓ ' : '') + WHO[st.who] + ': ' + st.step))) : null,
+          x.quote ? h('p',{class:'small muted'}, '“' + x.quote + '”') : null));
+        return [cb, x]; });
+      const keep = h('input',{type:'checkbox', checked:true});
+      const save = h('button',{class:'btn', type:'button'}, 'Save checked vendors');
+      out.append(h('label',{class:'small'}, keep, ' Keep this document with these vendors (managers and the owner can read it)'), h('div',{class:'row'}, save));
+      save.addEventListener('click', async () => {
+        const chosen = picks.filter(([cb]) => cb.checked).map(([, x]) => x); if (!chosen.length) return;
+        save.disabled = true;
+        const {data, error} = await A.sb.rpc('apply_vendor_setup', {p:{vendors:chosen, doc_name:keep.checked ? name : '', doc_text:keep.checked ? text : ''}});
+        if (error){ save.disabled = false; toast('Could not save: ' + error.message); return; }
+        toast(data.created + ' added, ' + data.updated + ' updated'); A.route();
+      });
+    }
+    // 2. tracker
+    const {data:vendors, error} = await A.sb.from('vendors').select('*').order('name');
+    if (error){ v.append(h('p',{class:'msg err'}, /schema cache|column/.test(error.message) ? 'Run the latest supabase/catalog.sql in Supabase first.' : error.message)); return; }
+    const {data:docs} = await A.sb.from('vendor_docs').select('id,name,vendor_ids,uploaded_at').order('uploaded_at', {ascending:false}).limit(200);
+    const open = vendors.filter(x => x.status !== 'Active' && x.status !== 'Not using');
+    const card = h('div',{class:'card'}, h('h2',null,'Accounts in progress (' + open.length + ')'));
+    if (!open.length) card.append(h('p',{class:'small muted'},'Every vendor is active. Upload notes above to start a new one.'));
+    open.sort((a,b) => SETUP.indexOf(a.status) - SETUP.indexOf(b.status) || a.name.localeCompare(b.name)).forEach(x => card.append(setupRow(x, docs || [])));
+    v.append(card);
+    const done = vendors.filter(x => x.status === 'Not using');
+    if (done.length) v.append(h('div',{class:'card'}, h('h2',null,'Not using'), h('ul',{class:'small'}, done.map(x => h('li',null, x.name + (x.notes ? ': ' + x.notes : ''))))));
+  }
+  function setupRow(x, docs){
+    const sel = h('select',{'aria-label':'Account status for ' + x.name}, SETUP.map(s => h('option',{value:s, selected:s === x.status}, s)));
+    const save = async patch => { const {error} = await A.sb.from('vendors').update(Object.assign(patch, {updated_at:new Date().toISOString()})).eq('id', x.id); toast(error ? 'Could not save: ' + error.message : 'Saved'); return !error; };
+    sel.addEventListener('change', async () => { const patch = {status:sel.value}; if (sel.value === 'Applying' && !x.applied_on) patch.applied_on = new Date().toISOString().slice(0,10); if (await save(patch)) Object.assign(x, patch); });
+    const steps = Array.isArray(x.setup_steps) ? x.setup_steps : [];
+    const list = h('ul',{class:'small', style:'list-style:none;padding-left:0'}, steps.map((st, i) => {
+      const cb = h('input',{type:'checkbox', checked:!!st.done, 'aria-label':st.step});
+      cb.addEventListener('change', () => { steps[i] = Object.assign({}, st, {done:cb.checked}); save({setup_steps:steps}); });
+      return h('li',null, h('label',null, cb, ' ', h('span',{class:'chip grey'}, WHO[st.who] || 'You'), ' ', st.step)); }));
+    const add = h('input',{type:'text', maxlength:'200', placeholder:'Add a step', 'aria-label':'Add a step for ' + x.name});
+    add.addEventListener('keydown', e => { if (e.key !== 'Enter' || !add.value.trim()) return; e.preventDefault(); steps.push({step:add.value.trim(), who:'owner', done:false}); save({setup_steps:steps}).then(() => A.route()); });
+    const mine = docs.filter(d => (d.vendor_ids || []).includes(x.id));
+    const links = h('div',{class:'row'});
+    if (x.apply_url) links.append(h('a',{class:'btn quiet sm', href:x.apply_url, target:'_blank', rel:'noopener'}, 'Open the application'));
+    if (x.apply_email) links.append(h('a',{class:'btn quiet sm', href:'mailto:' + encodeURIComponent(x.apply_email) + '?subject=' + encodeURIComponent('New account: ' + A.site().name)}, 'Email ' + x.apply_email));
+    mine.forEach(d => links.append(h('button',{class:'btn quiet sm', type:'button', onclick:async () => { const {data} = await A.sb.from('vendor_docs').select('body').eq('id', d.id).single();
+      if (data) window.open(URL.createObjectURL(new Blob([data.body], {type:'text/plain;charset=utf-8'})), '_blank', 'noopener'); }}, '📄 ' + d.name)));
+    return h('div',{class:'item'},
+      h('div',{class:'row'}, h('b',null, x.name), sel, x.applied_on ? h('span',{class:'small muted'}, 'applied ' + A.fmtDate(x.applied_on)) : null),
+      x.covers ? h('p',{class:'small'}, 'Covers: ' + x.covers) : null,
+      x.needs ? h('p',{class:'small'}, 'The application asks for: ' + x.needs) : null,
+      list, add, links);
+  }
+
   A.register({id:'catalog', name:'Title search and catalogs', what:'One search across every vendor’s title list with stock, cost, margin and special-order price; managers load ONIX feeds, CSV title lists, Faire exports and stock files.', tiers:['staff','lead','manager','owner'],
-    views:{titles:{t:'Title search', ic:'🔎', render:titlesView}, catalogs:{t:'Catalog imports', ic:'📥', render:importView, min:'manager'}}});
+    views:{titles:{t:'Title search', ic:'🔎', render:titlesView}, catalogs:{t:'Catalog imports', ic:'📥', render:importView, min:'manager'}, setup:{t:'Vendor setup', ic:'🤝', render:setupView, min:'manager'}}});
 })();
