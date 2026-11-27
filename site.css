@@ -1,22 +1,23 @@
-/* Shop Steady public site. Same tokens as get-app.html and the app (Core Design Workbook):
-   sky on white, rounded type, color held back for meaning, 44px+ targets, 65ch lines. */
+/* Downtown Stube public site (Supper Club look). Tokens shared with the app:
+   pine, mustard and brandy on sage, color held back for meaning, 44px+ targets, 65ch lines. */
 :root{
-  --bg:#F5F9FC; --surface:#FFFFFF; --ink:#1F3A52; --muted:#5A6F80; --line:#D3E1EC; --line-strong:#7891A6;
-  --pine:#1D6AA8; --pine-soft:#E8F3FC; --night:#E8F3FC;
-  --calm:#2E7D5B; --calm-ink:#1E5E43; --calm-soft:#E6F2EC; --amber-ink:#7E4A0B; --sky-ink:#185A8F; --amber:#9A5B0F; --amber-soft:#FBF1E2; --sun:#E7AE55;
-  --display:"Nunito","Segoe UI",system-ui,sans-serif;
-  --body:"Nunito Sans","Segoe UI",system-ui,sans-serif;
-  --shadow:0 16px 36px -28px rgba(30,70,110,.45);
+  --bg:#F2F5F0; --surface:#FFFFFF; --ink:#1A2A22; --muted:#56675E; --line:#D8E0DA; --line-strong:#7D9187;
+  --pine:#1B4332; --pine-soft:#E4EEE7; --night:#E4EEE7;
+  --calm:#2E7D5B; --calm-ink:#1E5E43; --calm-soft:#E6F2EC; --amber-ink:#7E4A0B; --sky-ink:#163828; --amber:#9A5B0F; --amber-soft:#FBF1E2; --sun:#F2C14E;
+  --display:"Work Sans","Segoe UI",system-ui,sans-serif;
+  --script:"Shrikhand",Georgia,serif;
+  --body:"Work Sans","Segoe UI",system-ui,sans-serif;
+  --shadow:0 16px 36px -28px rgba(20,50,35,.45);
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#141C26; --surface:#1B2532; --ink:#E6EEF5; --muted:#A9B9C7; --line:#2C3A4A; --line-strong:#6F869B;
-  --pine:#7FB8E8; --pine-soft:#1E2E40; --night:#1B2939;
-  --calm:#7CC9A3; --calm-ink:#7CC9A3; --sky-ink:#7FB8E8; --amber-ink:#E7AE55; --calm-soft:#1B3129; --amber:#E7AE55; --amber-soft:#2E2414; color-scheme:dark;
+  --bg:#121915; --surface:#1A231E; --ink:#E8EEEA; --muted:#A7B5AD; --line:#2E3A33; --line-strong:#73897D;
+  --pine:#9FD3B5; --pine-soft:#1E3027; --night:#1B2A22;
+  --calm:#7CC9A3; --calm-ink:#7CC9A3; --sky-ink:#9FD3B5; --amber-ink:#F2C14E; --calm-soft:#1B3129; --amber:#F2C14E; --amber-soft:#2E2414; color-scheme:dark;
   --shadow:0 16px 36px -28px rgba(0,0,0,.8)}}
 :root[data-theme="dark"]{
-  --bg:#141C26; --surface:#1B2532; --ink:#E6EEF5; --muted:#A9B9C7; --line:#2C3A4A; --line-strong:#6F869B;
-  --pine:#7FB8E8; --pine-soft:#1E2E40; --night:#1B2939;
-  --calm:#7CC9A3; --calm-ink:#7CC9A3; --sky-ink:#7FB8E8; --amber-ink:#E7AE55; --calm-soft:#1B3129; --amber:#E7AE55; --amber-soft:#2E2414; color-scheme:dark;
+  --bg:#121915; --surface:#1A231E; --ink:#E8EEEA; --muted:#A7B5AD; --line:#2E3A33; --line-strong:#73897D;
+  --pine:#9FD3B5; --pine-soft:#1E3027; --night:#1B2A22;
+  --calm:#7CC9A3; --calm-ink:#7CC9A3; --sky-ink:#9FD3B5; --amber-ink:#F2C14E; --calm-soft:#1B3129; --amber:#F2C14E; --amber-soft:#2E2414; color-scheme:dark;
   --shadow:0 16px 36px -28px rgba(0,0,0,.8)}
 
 *,*::before,*::after{box-sizing:border-box}
@@ -36,7 +37,7 @@ a{color:var(--pine)}
 .muted{color:var(--muted)}
 .small{font-size:.93rem}
 .stack{display:grid;gap:.9rem;align-content:start}
-.skip{position:absolute;left:-999px;top:0;z-index:2000;background:#1D6AA8;color:#fff;padding:.7rem 1rem;border-radius:0 0 12px 0;font-weight:700}.skip:focus{left:0}
+.skip{position:absolute;left:-999px;top:0;z-index:2000;background:#1B4332;color:#fff;padding:.7rem 1rem;border-radius:0 0 12px 0;font-weight:700}.skip:focus{left:0}
 
 /* Header */
 .top{border-bottom:1px solid var(--line);background:var(--surface);position:sticky;top:0;z-index:10}
@@ -97,7 +98,7 @@ ul.ticks li::after{content:"";position:absolute;left:.36rem;top:.5em;width:.3rem
 .pane{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1.5rem;align-items:center}
 
 /* App mockups, drawn in HTML so they stay sharp and follow the theme */
-.device{background:var(--surface);border:1px solid var(--line);border-radius:22px;box-shadow:0 30px 60px -40px rgba(30,70,110,.6);overflow:hidden;min-width:0}
+.device{background:var(--surface);border:1px solid var(--line);border-radius:22px;box-shadow:0 30px 60px -40px rgba(20,50,35,.6);overflow:hidden;min-width:0}
 .device .bar{display:flex;align-items:center;gap:.5rem;padding:.65rem .9rem;border-bottom:1px solid var(--line);font:700 .9rem/1 var(--display)}
 .device .bar .brand-mark{width:16px;height:16px}
 .device .bar .who{margin-left:auto;font:600 .78rem/1 var(--body);color:var(--muted)}
@@ -183,3 +184,12 @@ footer nav a{min-height:44px;display:inline-flex;align-items:center}
   .top nav{gap:.1rem .9rem;font-size:.95rem}
 }
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+/* Supper Club header, wordmark and headings */
+.top{background:#1B4332;border-bottom:4px solid #F2C14E}
+.top .brand{color:#F2C14E}
+.brand{font:400 1.35rem/1 var(--script);letter-spacing:.01em}
+.top nav a{color:#DCE8E0}
+.top nav a:hover,.top nav a[aria-current="page"]{color:#FFFFFF}
+.top nav a.btn{background:#F2C14E;border-color:#F2C14E;color:#1B4332}
+.brand-mark{background:#F2C14E;box-shadow:inset 0 0 0 4px #1B4332,0 0 0 2px #F2C14E}
+h1{font-family:var(--script);font-weight:400;letter-spacing:0}
