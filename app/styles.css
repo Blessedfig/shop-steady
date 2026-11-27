@@ -253,3 +253,4 @@ img.proof{max-width:260px;width:100%;border-radius:12px;border:1px solid var(--l
 .top :focus-visible{outline-color:var(--mustard)}
 h1{font-family:var(--script);font-weight:400;letter-spacing:.005em}
 .eyebrow{color:var(--brandy)}
+.syncst{font-size:.78rem;color:var(--muted);margin-left:.4rem}.syncst.err{color:var(--amber)}

@@ -43,7 +43,8 @@
   const fresh = () => Object.assign(JSON.parse(JSON.stringify(D.SEED)), {tier:'owner', site:D.SITES[0].id, mods:{}, setup:{}});
   let S; try { S = JSON.parse(localStorage.getItem(KEY)) || fresh(); } catch(e){ S = fresh(); }
   S.setup = S.setup || {};
-  function save(){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} }
+  // save(true) stores on this device only; a plain save() also tells sync.js to send the change to the server.
+  function save(localOnly){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} if (!localOnly && window.SSApp && window.SSApp.onSave) window.SSApp.onSave(); }
   // Setup per location: the owner's name for it, its business type and any renamed tiers.
   const setupOf = id => { const base = D.SITES.find(x => x.id === id) || D.SITES[0]; const o = S.setup[base.id] || {};
     return {id:base.id, name:o.name || base.name, type:(D.BUSINESS_TYPES[o.type] ? o.type : base.type) || 'retail', tiers:o.tiers || {}}; };
@@ -197,6 +198,7 @@
     user = session.user;
     if (location.hash && /access_token|error/.test(location.hash)) history.replaceState(null,'',location.pathname+'#/home');
     $('whoEmail').textContent = user.email || ''; $('gate').hidden = true; $('app').hidden = false;
+    if (window.SSApp.sync) await window.SSApp.sync.start(sb);
     fillSwitchers(); route();
     if (window.SSPw) SSPw.afterSignIn(sb, user, how);
   }

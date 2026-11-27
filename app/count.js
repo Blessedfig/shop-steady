@@ -55,9 +55,20 @@
   const saveCat = () => IDB.set('catalog', CAT).catch(() => toast('This browser could not save the Shopify files. They work until you close the page.'));
 
   function C(){ const s = S(); s.count = s.count || {raw:{}, zeroMissing:true, src:{}, merged:[]}; const c = s.count; c.raw = c.raw || {}; c.merged = c.merged || []; c.src = c.src || {}; return c; }
-  // counts per Shopify product, from raw scanned codes
-  function resolve(){ const c = C(), counts = {}, unknown = {};
-    Object.entries(c.raw).forEach(([code, n]) => { const k = CAT && CAT.codes[code]; if (k) counts[k] = (counts[k]||0) + n; else unknown[code] = n; });
+  // ---------- shared count (signed in): every device's tally lands in one place ----------
+  // S().scans = {round, devices:{deviceId:{who, area, raw:{code:n}, at}}}. Each device writes only its own entry,
+  // so phones never overwrite each other; the totals are the sum. "Start a new count" begins a new round everywhere.
+  const shared = () => !A.demo && !!A.sb;
+  const DEV = (() => { try { let d = localStorage.getItem('shop-steady-dev'); if (!d){ d = Math.random().toString(36).slice(2,10); localStorage.setItem('shop-steady-dev', d); } return d; } catch(e){ return 'dev'; } })();
+  function SC(){ const s = S(); s.scans = s.scans || {round:'', devices:{}}; s.scans.devices = s.scans.devices || {}; return s.scans; }
+  function syncRound(){ const c = C(), sc = SC(); if (shared() && (c.round || '') !== (sc.round || '')){ c.raw = {}; c.merged = []; c.last = null; c.round = sc.round || ''; delete sc.devices[DEV]; } }
+  function publish(){ if (!shared()) return; const c = C(), sc = SC();
+    sc.devices[DEV] = {who:(S().kioskWho ? S().kioskWho.n : A.tier().name), area:c.area || '', raw:Object.assign({}, c.raw), at:new Date().toISOString()}; }
+  function allRaw(){ if (!shared()) return C().raw; const tot = {};
+    Object.values(SC().devices).forEach(d => Object.entries(d.raw || {}).forEach(([k,n]) => tot[k] = (tot[k]||0) + n)); return tot; }
+  // counts per Shopify product, from raw scanned codes ("KEY:" means picked by name, for items with no barcode)
+  function resolve(){ const counts = {}, unknown = {};
+    Object.entries(allRaw()).forEach(([code, n]) => { const k = code.startsWith('KEY:') ? code.slice(4) : CAT && CAT.codes[code]; if (k) counts[k] = (counts[k]||0) + n; else unknown[code] = n; });
     return {counts, unknown}; }
 
   // Products export: one row per variant. Columns: Handle (or URL handle), Title, Vendor, Variant SKU (or SKU), Variant Barcodes (or Barcodes).
@@ -106,9 +117,23 @@
   function scan(raw){
     const code = norm(raw); if (!code) return;
     const c = C(); c.raw[code] = (c.raw[code] || 0) + 1; c.last = {code, at:Date.now()}; c.n = (c.n||0) + 1;
-    A.save(); const known = !CAT || !Object.keys(CAT.codes).length ? null : !!CAT.codes[code];
+    publish(); A.save(); const known = !CAT || !Object.keys(CAT.codes).length ? null : !!CAT.codes[code];
     feedback(known !== false); return known;
   }
+
+  function pick(key){ const c = C(), code = 'KEY:'+key; c.raw[code] = (c.raw[code] || 0) + 1; c.last = {code, at:Date.now()}; publish(); A.save(); feedback(true); }
+
+  // The product list is shared through the database too, so phones can look up items with no barcode by name.
+  async function shareCat(){ if (!shared() || !CAT) return;
+    const items = Object.entries(CAT.items).map(([k,it]) => [k, it.t, it.vendor || '']);
+    const {data:row} = await A.sb.from('app_docs').select('version').eq('key','catalog').maybeSingle();
+    const {error} = await A.sb.rpc('save_doc', {p_key:'catalog', p_data:{items, codes:CAT.codes, at:new Date().toISOString()}, p_base:row ? row.version : 0});
+    if (error) toast('The product list could not be shared with the other phones: '+error.message); }
+  async function fetchCat(){ if (!shared() || Object.keys(CAT.items).length) return false;
+    const {data:row} = await A.sb.from('app_docs').select('data').eq('key','catalog').maybeSingle();
+    if (!row || !row.data || !row.data.items) return false;
+    row.data.items.forEach(([k,t,vendor]) => { const [handle, sku] = k.split('|'); CAT.items[k] = {handle, sku, t, vendor}; });
+    Object.assign(CAT.codes, row.data.codes || {}); await saveCat(); return true; }
 
   // ---------- several phones at once ----------
   // Each phone scans its own section, then taps "Send my scans" (a small CSV). The device with the Shopify files
@@ -122,7 +147,7 @@
     if (!m) return 'That isn\'t a scans file from this app.';
     if (c.merged.some(x => x.id === m[1])) return 'Those scans were already added.';
     let n = 0; lines.slice(2).forEach(l => { const [code, k] = l.split(','); const v = parseInt(k, 10); if (code && v > 0){ c.raw[code] = (c.raw[code]||0) + v; n += v; } });
-    c.merged.push({id:m[1], who:m[2] || name, n, at:new Date().toISOString()}); A.save(); return null;
+    c.merged.push({id:m[1], who:m[2] || name, n, at:new Date().toISOString()}); publish(); A.save(); return null;
   }
 
   function exportInventory(){
@@ -169,14 +194,14 @@
   function count(v){
     v.append(head('Stock · '+A.site().name, 'Count and sync with Shopify', 'Scan what you actually have, on as many phones as you like, then send Shopify the real numbers. Anything you don\'t find can be set to 0.'));
     const wait = h('p',{class:'muted'},'Loading…'); v.append(wait);
-    loadCat().then(() => { wait.remove(); render(v); });
+    loadCat().then(() => fetchCat().catch(() => false)).then(() => { wait.remove(); syncRound(); render(v); });
   }
   function render(v){
     const c = C(), isMgr = MGR.includes(S().tier), nItems = Object.keys(CAT.items).length;
     // step 1: files
     const pf = h('input',{type:'file',multiple:true,accept:'.csv,text/csv','aria-label':'Shopify products export'}), inf = h('input',{type:'file',accept:'.csv,text/csv','aria-label':'Shopify inventory export'});
     const read = (inp, fn) => inp.addEventListener('change', async () => { const fs = [...inp.files]; if (!fs.length) return; toast('Reading… big files take a few seconds');
-      let err = null; for (const f of fs){ err = fn(await f.text()) || err; } await saveCat(); toast(err || 'Loaded '+fs.map(f => f.name).join(', ')); A.route(); });
+      let err = null; for (const f of fs){ err = fn(await f.text()) || err; } await saveCat(); toast(err || 'Loaded '+fs.map(f => f.name).join(', ')); shareCat().catch(() => {}); A.route(); });
     read(pf, loadProducts); read(inf, loadInventory);
     if (isMgr) v.append(h('details',{class:'card',open:!nItems || !CAT.inv}, h('summary',null, h('b',null,'1. Load your Shopify files'), nItems ? ' · '+nItems.toLocaleString()+' products'+(CAT.inv ? ', counts for '+CAT.location : '') : ''),
       h('p',{class:'small muted'},'Only the device that makes the final Shopify file needs these. Phones that only scan can skip this step.'),
@@ -189,11 +214,12 @@
     // step 2: scan
     const inp = h('input',{type:'text',inputmode:'numeric',autocomplete:'off',enterkeyhint:'done',placeholder:'Scan or type a barcode, ISBN or SKU, then Enter','aria-label':'Barcode'});
     const camBox = h('div');
-    const title = code => { const k = CAT.codes[code], it = k && CAT.items[k]; return it ? it.t : null; };
+    const title = code => { const k = code.startsWith('KEY:') ? code.slice(4) : CAT.codes[code], it = k && CAT.items[k]; return it ? it.t : null; };
     const lastLine = () => { const l = c.last; if (!l) return 'Ready to scan.'; const t = title(l.code);
       if (t) return '✓ '+t+' · '+c.raw[l.code]+' scanned'; return nItems ? '⚠ '+l.code+' is not in Shopify. Set it aside to add later.' : '✓ '+l.code+' · '+c.raw[l.code]+' scanned'; };
     const status = h('p',{class:'msg big','aria-live':'polite'}, lastLine());
-    const summaryText = () => { const n = Object.values(c.raw).reduce((a,b) => a+b, 0); return n.toLocaleString()+' copies scanned · '+Object.keys(c.raw).length.toLocaleString()+' different codes'+(c.merged.length ? ' · includes '+c.merged.length+' other device'+(c.merged.length>1?'s':'') : ''); };
+    const summaryText = () => { const mine = Object.values(c.raw).reduce((a,b) => a+b, 0), all = Object.values(allRaw()).reduce((a,b) => a+b, 0), nd = shared() ? Object.keys(SC().devices).length : 0;
+      return (shared() ? 'You: '+mine.toLocaleString()+' · everyone: '+all.toLocaleString()+' items scanned on '+nd+' device'+(nd===1?'':'s') : mine.toLocaleString()+' items scanned · '+Object.keys(c.raw).length.toLocaleString()+' different codes'+(c.merged.length ? ' · includes '+c.merged.length+' other device'+(c.merged.length>1?'s':'') : '')); };
     const totals = h('p',{class:'small muted'}, summaryText());
     const doScan = raw => { const known = scan(raw); status.textContent = lastLine(); status.className = 'msg big'+(known === false ? ' err' : ''); totals.textContent = summaryText(); };
     inp.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === 'Tab'){ e.preventDefault(); doScan(inp.value); inp.value = ''; } });
@@ -203,8 +229,22 @@
       h('label',{class:'f'},'Section you are scanning (optional)', area),
       inp, status, totals,
       h('div',{class:'row'}, h('button',{class:'btn ghost sm',type:'button',onclick:()=>cameraScan(doScan, camBox)},'Scan with camera'),
-        h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ const l = c.last; if (!l || !c.raw[l.code]) return toast('Nothing to undo'); c.raw[l.code]--; if (c.raw[l.code] <= 0) delete c.raw[l.code]; c.last = null; A.save(); A.route(); }},'Undo last scan')),
+        h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ const l = c.last; if (!l || !c.raw[l.code]) return toast('Nothing to undo'); c.raw[l.code]--; if (c.raw[l.code] <= 0) delete c.raw[l.code]; c.last = null; publish(); A.save(); A.route(); }},'Undo last scan')),
       camBox));
+    // items with no barcode (food, pens, statues...): find by name and tap +1 per item
+    const q = h('input',{type:'search',autocomplete:'off',placeholder:nItems ? 'Type part of the name, e.g. mug, fig jam, pen' : 'Load the Shopify files first','aria-label':'Find an item by name',disabled:!nItems});
+    const hits = h('div',{class:'list'});
+    q.addEventListener('input', () => { const t = q.value.trim().toLowerCase(); if (t.length < 2) return hits.replaceChildren();
+      const words = t.split(/\s+/), found = [];
+      for (const [k,it] of Object.entries(CAT.items)){ const name = (it.t+' '+(it.vendor||'')).toLowerCase(); if (words.every(w => name.includes(w))){ found.push([k,it]); if (found.length >= 12) break; } }
+      hits.replaceChildren(...(found.length ? found.map(([k,it]) => { const n = () => c.raw['KEY:'+k] || 0, lab = h('span',{class:'small muted'}, n() ? n()+' counted here' : '');
+        return h('div',{class:'item'}, h('b',null,it.t), it.vendor ? h('span',{class:'small muted'},it.vendor) : null, lab,
+          h('div',{class:'row'}, h('button',{class:'btn sm',type:'button',onclick:()=>{ pick(k); lab.textContent = n()+' counted here'; status.textContent = lastLine(); totals.textContent = summaryText(); }},'+1'),
+            h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ const kk = 'KEY:'+k; if (!c.raw[kk]) return; c.raw[kk]--; if (!c.raw[kk]) delete c.raw[kk]; publish(); A.save(); lab.textContent = n() ? n()+' counted here' : ''; totals.textContent = summaryText(); }},'−1'))); })
+        : [h('p',{class:'small muted'},'Nothing matches. Set it aside and add it in Shopify later.')])); });
+    v.append(h('div',{class:'card'}, h('h2',null,'No barcode? Find it by name'),
+      h('p',{class:'small muted'},'For food, pens, statues, cards and anything else without a code. Tap +1 for each one you count. Tip: Shopify\'s Multi Barcode Labels app can print labels so next time they scan.'),
+      q, hits));
     setTimeout(() => inp.focus(), 50);
     // step 2b: more phones
     const sf = h('input',{type:'file',multiple:true,accept:'.csv,text/csv','aria-label':'Scans from other devices'});
@@ -212,7 +252,11 @@
     const sendScans = async () => { const text = myScansCsv(), name = 'scans-'+(c.area||A.tier().name).replace(/[^\w-]+/g,'-').toLowerCase()+'-'+isoDay(new Date())+'.csv';
       try { const file = new File([text], name, {type:'text/csv'}); if (navigator.canShare && navigator.canShare({files:[file]})){ await navigator.share({files:[file], title:'Stock count scans'}); return; } } catch(e){ if (e.name === 'AbortError') return; }
       download(name, 'text/csv', text); };
-    v.append(h('div',{class:'card'}, h('h2',null,'Counting with several phones'),
+    const devs = shared() ? Object.entries(SC().devices).sort((a,b) => String(b[1].at).localeCompare(String(a[1].at))) : [];
+    if (shared()) v.append(h('div',{class:'card'}, h('h2',null,'Everyone counting now'),
+      h('p',{class:'small muted'},'Each signed-in phone\'s scans arrive here by themselves within about 30 seconds. Nothing to send.'),
+      devs.length ? h('ul',{class:'small'}, devs.map(([id,d]) => h('li',null, (d.who||'Someone')+(d.area ? ' · '+d.area : '')+' · '+Object.values(d.raw||{}).reduce((a,b) => a+b, 0).toLocaleString()+' items · '+A.fmtTime(d.at)+(id === DEV ? ' (this device)' : '')))) : h('p',{class:'muted'},'No scans yet.')));
+    v.append(h('details',{class:'card',open:!shared()}, h('summary',null, h('b',null, shared() ? 'No internet? Send scans as a file' : 'Counting with several phones')),
       h('ol',{class:'small'}, h('li',null,'Each person opens this page on their phone, types their section, and scans. No Shopify files needed on the phones.'),
         h('li',null,'When a section is done, they tap Send my scans and text, email or AirDrop the file to the person running the count.'),
         h('li',null,'On the main device, add each file below. The same file can\'t be added twice.')),
@@ -235,7 +279,8 @@
         h('button',{class:'btn',type:'button',disabled:!CAT.inv || !counted,onclick:exportInventory},'Download file for Shopify'),
         Object.keys(unknown).length ? h('button',{class:'btn ghost sm',type:'button',onclick:()=>download('not-in-shopify-'+isoDay(new Date())+'.csv','text/csv',toCsv([['Barcode or code','Copies found'], ...Object.entries(unknown)])) },'Download '+Object.keys(unknown).length+' unknown codes') : null),
       h('p',{class:'small muted'},'Then in Shopify: Products > Inventory > Import, choose this file, review, and confirm. Only the location above changes. Add every phone\'s scans first, and avoid selling during the count, or recount what sold.'),
-      h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ if (!confirm('Clear all scans on this device, including added phones?')) return; c.raw = {}; c.merged = []; c.last = null; c.n = 0; A.save(); toast('Count cleared'); A.route(); }},'Start a new count (clears scans)')));
+      h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ if (!confirm(shared() ? 'Start a new count for everyone? All phones\' scans for this count are cleared.' : 'Clear all scans on this device, including added phones?')) return; c.raw = {}; c.merged = []; c.last = null; c.n = 0;
+        if (shared()){ const sc = SC(); sc.round = Math.random().toString(36).slice(2,10); sc.devices = {}; c.round = sc.round; } A.save(); toast('Count cleared'); A.route(); }},'Start a new count (clears scans)')));
     // step 4: where each product comes from
     const vendors = [...new Set(items.map(([,it]) => it.vendor).filter(Boolean))].sort();
     if (vendors.length && isMgr){
