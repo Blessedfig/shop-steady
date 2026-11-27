@@ -22,7 +22,7 @@
     const n = document.createElement('div');
     n.setAttribute('role', 'status');
     n.textContent = 'You were signed out after 12 hours without use. Please sign in again.';
-    n.style.cssText = 'position:fixed;left:50%;bottom:16px;transform:translateX(-50%);max-width:calc(100% - 32px);background:#E4EEE7;color:#1A2A22;border:1px solid #B9CDDD;border-radius:12px;padding:.8rem 1rem;font:inherit;z-index:1500;box-shadow:0 10px 30px -15px rgba(20,50,80,.5)';
+    n.style.cssText = 'position:fixed;left:50%;bottom:16px;transform:translateX(-50%);max-width:calc(100% - 32px);background:#E4EEE7;color:#1A2A22;border:1px solid #BFD2C5;border-radius:12px;padding:.8rem 1rem;font:inherit;z-index:1500;box-shadow:0 10px 30px -15px rgba(20,50,35,.5)';
     document.body.appendChild(n);
     setTimeout(() => n.remove(), 12000);
   }
