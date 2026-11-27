@@ -202,8 +202,7 @@
           if (!p) return toast('That PIN did not match. Try again.');
           S().kioskWho = {n:p.n, at:Date.now()}; A.save(); A.route();
         }, 'Enter your PIN')));
-        const cfg = window.DESK_CONFIG || {};
-        if (!cfg.supabaseUrl || /YOUR-PROJECT-REF/.test(cfg.supabaseUrl)) v.append(h('p',{class:'small muted'},'Sample PINs: 1111 or 2222 staff, 3333 manager, 9999 owner.'));
+        if (A.demo) v.append(h('p',{class:'small muted'},'Sample PINs: 1111 or 2222 staff, 3333 manager, 9999 owner.'));
         return;
       }
       setTimeout(() => { if (/^#\/kiosk/.test(location.hash)) A.route(); }, 121000); // back to the PIN pad
