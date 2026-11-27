@@ -10,8 +10,8 @@
 --
 -- Who sees what:
 --   everyone signed in : search titles, see stock at each vendor and the special-order price (vendor_directory view).
---   lead and up        : also see cost, discount, margin and vendor terms (the vendors table itself).
---   manager and up     : edit vendors and discounts, import catalogs.
+--   manager and up     : also see cost, discount, margin and vendor terms (the vendors table itself), like the app's
+--                        other cost areas (private-areas.sql); edit vendors and discounts, import catalogs.
 --   owner              : copy the app's existing vendor list into the vendors table (once).
 
 create schema if not exists extensions;
@@ -135,32 +135,32 @@ grant select, insert, update, delete on public.vendors, public.vendor_discounts 
 
 drop policy if exists "members read vendors" on public.vendors;
 drop policy if exists "leads read vendors" on public.vendors;
-create policy "leads read vendors" on public.vendors for select to authenticated using (public.role_rank(public.my_role()) >= 2);
+create policy "leads read vendors" on public.vendors for select to authenticated using (public.role_rank(public.my_role()) >= 3);
 drop policy if exists "managers change vendors" on public.vendors;
 create policy "managers change vendors" on public.vendors for all to authenticated
   using (public.role_rank(public.my_role()) >= 3) with check (public.role_rank(public.my_role()) >= 3);
 
 drop policy if exists "leads read discounts" on public.vendor_discounts;
-create policy "leads read discounts" on public.vendor_discounts for select to authenticated using (public.role_rank(public.my_role()) >= 2);
+create policy "leads read discounts" on public.vendor_discounts for select to authenticated using (public.role_rank(public.my_role()) >= 3);
 drop policy if exists "managers change discounts" on public.vendor_discounts;
 create policy "managers change discounts" on public.vendor_discounts for all to authenticated
   using (public.role_rank(public.my_role()) >= 3) with check (public.role_rank(public.my_role()) >= 3);
 
 drop policy if exists "members read titles" on public.catalog_titles;
 create policy "members read titles" on public.catalog_titles for select to authenticated using (public.is_desk_member());
--- Offers hold cost, so staff read them only through search_titles(), which hides cost below lead.
+-- Offers hold cost, so staff and leads read them only through search_titles(), which hides cost below manager.
 drop policy if exists "leads read offers" on public.vendor_offers;
-create policy "leads read offers" on public.vendor_offers for select to authenticated using (public.role_rank(public.my_role()) >= 2);
+create policy "leads read offers" on public.vendor_offers for select to authenticated using (public.role_rank(public.my_role()) >= 3);
 drop policy if exists "managers read imports" on public.catalog_imports;
 create policy "managers read imports" on public.catalog_imports for select to authenticated using (public.role_rank(public.my_role()) >= 3);
 
--- Discounts and terms are cost information, so staff read vendors only through this view, which leaves them out.
+-- Discounts and terms are cost information, so staff and leads read vendors only through this view, which leaves them out.
 drop view if exists public.vendor_directory;
 create view public.vendor_directory as
   select id, name, kind, status, covers, how_to_order, website, stock_check_url, contact, email, phone,
          min_order, lead_days, notes,
-         case when public.role_rank(public.my_role()) >= 2 then terms end as terms,
-         case when public.role_rank(public.my_role()) >= 2 then default_discount end as default_discount,
+         case when public.role_rank(public.my_role()) >= 3 then terms end as terms,
+         case when public.role_rank(public.my_role()) >= 3 then default_discount end as default_discount,
          returnable, free_freight_over, updated_at
   from public.vendors where public.is_desk_member();
 grant select on public.vendor_directory to authenticated;
@@ -204,14 +204,14 @@ revoke all on function public.special_order_price(numeric, numeric) from public,
 grant execute on function public.special_order_price(numeric, numeric) to authenticated;
 
 -- 5. Search: by ISBN/UPC, or words from the title, author, series or publisher.
--- Each result lists every vendor that carries it, best stock first. Cost and margin only for lead and up.
+-- Each result lists every vendor that carries it, best stock first. Cost and margin only for managers and the owner.
 create or replace function public.search_titles(p_q text, p_limit int default 25, p_qty int default 1)
 returns table(item_key text, isbn13 text, title text, subtitle text, contributors text, publisher text, imprint text,
               format text, pub_date date, list_price numeric, cover_url text, offers jsonb)
 language plpgsql stable security definer set search_path = public, extensions as $$
 #variable_conflict use_column
 declare q text := trim(coalesce(p_q,'')); digits text := regexp_replace(coalesce(p_q,''), '[^0-9Xx]', '', 'g');
-        see_cost boolean := public.role_rank(public.my_role()) >= 2; lim int := least(greatest(coalesce(p_limit,25),1),100);
+        see_cost boolean := public.role_rank(public.my_role()) >= 3; lim int := least(greatest(coalesce(p_limit,25),1),100);
 begin
   if not public.is_desk_member() then raise exception 'not-member'; end if;
   if length(q) < 2 then return; end if;

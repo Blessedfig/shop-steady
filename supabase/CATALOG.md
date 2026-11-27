@@ -13,10 +13,12 @@ Tables and rules: `catalog.sql`. Screens: **Title search** (everyone) and **Cata
 Never put account numbers, logins or passwords in the vendor records. They stay in your password manager.
 
 ## Who sees what
+Costs stay with managers and the owner, the same as the app's other cost records.
+
 | | Search, stock, special-order price | Cost, discount, margin, terms | Edit vendors, load catalogs |
 |---|---|---|---|
 | Staff | yes | no | no |
-| Shift lead | yes | yes | no |
+| Shift lead | yes | no | no |
 | Manager, owner | yes | yes | yes |
 
 ## How cost, margin and price are worked out

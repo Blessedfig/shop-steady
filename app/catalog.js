@@ -1,6 +1,6 @@
 // Title search and catalog imports.
 // Title search: one search across every vendor's title list (Supabase tables in supabase/catalog.sql). Each result shows
-//   which vendors carry it, their last known stock, and the special-order price. Leads and up also see cost and margin.
+//   which vendors carry it, their last known stock, and the special-order price. Managers and the owner also see cost and margin.
 // Catalog imports (managers and owners): load a vendor's title list or stock file, and set each vendor's discounts.
 //   ONIX 2.1 or 3.0 (.xml, the publishers' standard feed: titles, prices, discounts, availability, stock on hand)
 //   CSV / TSV title lists (Edelweiss exports, PRH MetaExcel or Bookazine/IPG lists saved as CSV, Faire product exports)
