@@ -138,12 +138,17 @@
     download('shopify-inventory-counted-'+isoDay(new Date())+'.csv', 'text/csv', [hdr, ...out].map(r => r.map(esc).join(',')).join('\r\n')+'\r\n');
   }
 
-  // Camera scanning. Chrome on Android has a built-in barcode reader; iPhones and others load a small open-source one.
-  const POLY = 'https://cdn.jsdelivr.net/npm/barcode-detector@2.3.1/+esm';
+  // Camera scanning. Chrome on Android has a built-in barcode reader. iPhones and others load the open-source
+  // reader in vendor/ (barcode-detector 3.2.5 + zxing-wasm 3.1.8, served from this site, about 1 MB, only when needed).
+  let poly = null;
+  function loadPoly(){ return poly || (poly = new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = 'vendor/barcode-detector.js';
+    sc.onload = () => { const m = window.BarcodeDetectionAPI; if (!m) return no(new Error('reader missing'));
+      m.setZXingModuleOverrides({locateFile:(path, prefix) => /\.wasm$/.test(path) ? new URL('vendor/zxing_reader.wasm', location.href).href : prefix + path}); ok(m); };
+    sc.onerror = () => { poly = null; no(new Error('reader did not load')); }; document.head.append(sc); })); }
   async function detector(){
     const F = ['ean_13','ean_8','upc_a','upc_e','code_128','code_39'];
     if ('BarcodeDetector' in window){ try { const ok = await window.BarcodeDetector.getSupportedFormats(); if (ok.includes('ean_13')) return new window.BarcodeDetector({formats:F}); } catch(e){} }
-    try { const mod = await import(POLY); return new mod.BarcodeDetector({formats:F}); } catch(e){ return null; }
+    try { const m = await loadPoly(); return new m.BarcodeDetector({formats:F}); } catch(e){ return null; }
   }
   async function cameraScan(onCode, box){
     box.textContent = 'Starting the camera…';
