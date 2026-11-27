@@ -110,7 +110,7 @@
   // ---------- changes for Shopify ----------
   function changesCard(list){
     const c = h('div',{class:'card'}, h('h2',null,'Changes for Shopify'),
-      h('p',{class:'small muted'}, 'Propose a new cost or vendor for an item. '+(isOwner() ? 'Nothing goes to Shopify until you tap Send to Shopify.' : 'The owner sends them to Shopify.')));
+      h('p',{class:'small muted'}, 'Find a product and change its price, cost, barcode or vendor. '+(isOwner() ? 'Your changes go straight to Shopify; changes from managers wait here for you.' : 'The owner approves them before they reach Shopify.')));
     const pending = list.filter(x => x.status === 'pending');
     if (list.length) c.append(h('div',{class:'list'}, list.map(x => h('div',{class:'item'},
       h('span',{class:'small muted'}, h('b',null, ({cost:'Cost', vendor:'Vendor', stock:'Stock', barcode:'Barcode', price:'Price', type:'Product type', tracked:'Track stock'})[x.kind] || x.kind), ' · '+(x.note || '#'+x.variant_id)+' · '+(x.created_by || '')),
@@ -123,7 +123,7 @@
       b.onclick = () => busy(b, 'Sending…', async () => { const r = await call('shopify-sync',{action:'apply', ids:pending.map(x => x.id)}); toast(r.applied+' sent'+(r.failed ? ', '+r.failed+' failed' : '')); A.route(); });
       c.append(h('div',{class:'row'}, b));
     }
-    c.append(h('details',null, h('summary',null,'Propose a change'), proposeForm()));
+    c.append(h('details',{open:true}, h('summary',null,'Change a product (price, cost, barcode, vendor)'), proposeForm()));
     return c;
   }
   function proposeForm(){
@@ -132,7 +132,7 @@
     q.oninput = () => { clearTimeout(t); t = setTimeout(find, 300); };
     async function find(){
       const s = q.value.trim().replace(/[%,()]/g,' '); out.textContent = ''; if (s.length < 3) return;
-      const r = await A.sb.from('shopify_variants').select('variant_id,inventory_item_id,product_title,variant_title,vendor,barcode,sku,price,available')
+      const r = await A.sb.from('shopify_variants').select('variant_id,inventory_item_id,product_title,variant_title,vendor,barcode,sku,price,available').neq('status','ARCHIVED')
         .or('product_title.ilike.%'+s+'%,barcode.eq.'+s+',sku.eq.'+s).limit(10);
       if (r.error) return out.append(h('p',{class:'small'}, r.error.message));
       const costs = {}; const ids = (r.data||[]).map(x => x.inventory_item_id).filter(Boolean);
@@ -142,13 +142,34 @@
     }
     function item(x, cost){
       const name = x.product_title+(x.variant_title && x.variant_title !== 'Default Title' ? ' · '+x.variant_title : '');
-      const ci = h('input',{type:'number',step:'0.01',min:'0',placeholder:'New cost',style:'max-width:8rem'}), vi = h('input',{type:'text',placeholder:'New vendor',style:'max-width:12rem'});
-      const add = async (kind, oldv, newv) => { if (newv === '' || newv == null) return toast('Type the new '+kind+' first');
-        const r = await A.sb.from('shopify_changes').insert({kind, variant_id:x.variant_id, old_value:oldv == null ? null : String(oldv), new_value:String(newv), note:name});
-        if (r.error) toast(r.error.message); else { toast('Waiting for the owner'); A.route(); } };
-      return h('div',{class:'item'}, h('b',null,name), h('span',{class:'small muted'}, ' '+(x.vendor || 'no vendor')+' · price '+money(x.price)+' · cost '+(cost != null ? money(cost) : 'none')+' · '+(x.available ?? '—')+' left'),
-        h('div',{class:'row'}, ci, h('button',{class:'btn quiet sm',type:'button',onclick:()=>add('cost', cost, ci.value)},'Propose cost')),
-        h('div',{class:'row'}, vi, h('button',{class:'btn quiet sm',type:'button',onclick:()=>add('vendor', x.vendor, vi.value.trim())},'Propose vendor')));
+      const num = v => v === '' || v == null ? null : Number(v);
+      const f = {
+        price: h('input',{type:'number',step:'0.01',min:'0',value:x.price ?? '','aria-label':'Price for '+name}),
+        cost: h('input',{type:'number',step:'0.01',min:'0',value:cost ?? '','aria-label':'Cost per item for '+name}),
+        barcode: h('input',{type:'text',inputmode:'numeric',value:x.barcode || '','aria-label':'Barcode for '+name}),
+        vendor: h('input',{type:'text',value:x.vendor || '','aria-label':'Vendor for '+name})};
+      const margin = h('p',{class:'small muted'});
+      const showMargin = () => { const p = num(f.price.value), c = num(f.cost.value);
+        margin.textContent = p > 0 && c != null ? 'Margin '+Math.round(100*(p-c)/p)+'% ('+money(p-c)+' an item)' : ''; };
+      f.price.oninput = f.cost.oninput = showMargin; showMargin();
+      const save = h('button',{class:'btn sm',type:'button'}, isOwner() ? 'Save to Shopify' : 'Send to the owner');
+      save.onclick = () => busy(save, 'Saving…', async () => {
+        const rows = [];
+        const p = num(f.price.value), c = num(f.cost.value), b = f.barcode.value.trim().replace(/[\s-]/g,''), v = f.vendor.value.trim();
+        if (p != null && p !== Number(x.price)) { if (!(p > 0)) throw new Error('Price must be more than 0'); rows.push({kind:'price', old:x.price, val:p.toFixed(2)}); }
+        if (c != null && c !== Number(cost)) { if (c < 0) throw new Error('Cost cannot be below 0'); rows.push({kind:'cost', old:cost, val:c.toFixed(2)}); }
+        if (b !== (x.barcode || '')) { if (b && !/^[0-9A-Za-z]{4,40}$/.test(b)) throw new Error('That barcode has odd characters'); rows.push({kind:'barcode', old:x.barcode, val:b}); }
+        if (v && v !== (x.vendor || '')) rows.push({kind:'vendor', old:x.vendor, val:v});
+        if (!rows.length) return toast('Nothing changed');
+        const r = await A.sb.from('shopify_changes').insert(rows.map(o => ({kind:o.kind, variant_id:x.variant_id, old_value:o.old == null ? null : String(o.old), new_value:o.val, note:name}))).select('id');
+        if (r.error) throw new Error(r.error.message);
+        if (isOwner()){ const a = await call('shopify-sync',{action:'apply', ids:(r.data||[]).map(y => y.id)}); toast(a.applied+' saved to Shopify'+(a.failed ? ', '+a.failed+' failed (see Changes)' : '')); }
+        else toast('Sent to the owner');
+        A.route(); });
+      const fld = (label, el) => h('label',{class:'small',style:'display:grid;gap:.2rem;min-width:0'}, label, el);
+      return h('div',{class:'item'}, h('b',null,name), h('span',{class:'small muted'}, (x.available ?? '—')+' on hand'+(x.sku ? ' · SKU '+x.sku : '')),
+        h('div',{class:'mapgrid'}, fld('Price', f.price), fld('Cost per item', f.cost), fld('Barcode', f.barcode), fld('Vendor', f.vendor)),
+        margin, h('div',{class:'row'}, save));
     }
     return h('div',null, q, out);
   }

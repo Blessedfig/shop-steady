@@ -134,7 +134,7 @@ create policy "managers read changes" on public.shopify_changes for select to au
 drop policy if exists "managers propose changes" on public.shopify_changes;
 create policy "managers propose changes" on public.shopify_changes for insert to authenticated
   with check (public.role_rank(public.my_role()) >= 3 and status = 'pending' and applied_at is null and auto_rule is null and fix_id is null
-              and kind in ('cost','vendor'));
+              and kind in ('cost','vendor','price','barcode'));
 drop policy if exists "managers drop pending changes" on public.shopify_changes;
 create policy "managers drop pending changes" on public.shopify_changes for update to authenticated
   using (public.role_rank(public.my_role()) >= 3 and status = 'pending') with check (status in ('pending','dropped') and applied_at is null);

@@ -23,7 +23,7 @@ alter table public.shopify_changes add column if not exists fix_id bigint;
 drop policy if exists "managers propose changes" on public.shopify_changes;
 create policy "managers propose changes" on public.shopify_changes for insert to authenticated
   with check (public.role_rank(public.my_role()) >= 3 and status = 'pending' and applied_at is null and auto_rule is null and fix_id is null
-              and kind in ('cost','vendor'));
+              and kind in ('cost','vendor','price','barcode'));
 -- people in the app may only write these columns: they propose (kind, item, values, note) and drop (status).
 -- auto_rule and fix_id are set only by the server, so nobody can make their own change look approved.
 revoke insert, update on public.shopify_changes from authenticated;
