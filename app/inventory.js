@@ -72,10 +72,11 @@
       h('label',{class:'f'},'Date', h('input',{type:'date',name:'date',value:isoDay(new Date()),required:true})),
       h('label',{class:'f'},'Category', h('select',{name:'cat'}, D.EXP_CATS.map(c => h('option',null,c)))),
       h('label',{class:'f'},'Amount ($)', h('input',{type:'number',name:'amt',step:'0.01',min:'0',required:true})),
+      h('label',{class:'f'},'Paid to (optional)', h('input',{type:'text',name:'payee',maxlength:'80',placeholder:'Store, company or person'})),
       h('label',{class:'f'},'Note', h('input',{type:'text',name:'note',maxlength:'120'})),
       h('button',{class:'btn',type:'submit'},'Add expense'));
     form.addEventListener('submit', e => { e.preventDefault(); const f = new FormData(form);
-      ex.push({site:S().site, date:f.get('date'), cat:f.get('cat'), amt:+f.get('amt'), note:String(f.get('note')||'')}); A.save(); toast('Saved'); A.route(); });
+      ex.push({id:A.uid(), site:S().site, date:f.get('date'), cat:f.get('cat'), amt:+f.get('amt'), payee:String(f.get('payee')||'').trim(), note:String(f.get('note')||'')}); A.save(); toast('Saved'); A.route(); });
     v.append(form);
     const mine = ex.filter(x => x.site === S().site).sort((a,b) => b.date.localeCompare(a.date));
     v.append(h('div',{class:'card'}, h('h2',null,'Recent'), h('div',{class:'list'}, mine.map(x => h('div',{class:'item'}, h('b',null,money(x.amt)+' · '+x.cat), h('span',{class:'small muted'}, A.fmtDate(x.date)+(x.note?' · '+x.note:'')))))),
