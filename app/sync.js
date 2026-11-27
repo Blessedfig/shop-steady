@@ -1,6 +1,6 @@
 // Shared data: keeps the app's records in Supabase (table app_docs, see supabase/sync.sql) so every signed-in
 // device sees the same schedule, notes, customers and tax records. Each area (shifts, voice, notes...) is one row.
-//   - On sign-in the app loads every area. A device that never synced takes the shared copy as it is.
+//   - On sign-in the app loads every area. A device that never synced adds its own records to the shared copy.
 //   - After a change, it saves the areas that changed. If someone else saved first, it merges the two:
 //     records with an id are combined one by one (added, changed or removed on either side), anything
 //     else keeps this device's version. Then it tries again.
@@ -43,6 +43,19 @@
     return clone(l === undefined ? r : l); // both changed the same thing: this device's edit wins
   }
 
+  // First sync on a device: keep what is already on it (for example a Team voice post made before syncing existed)
+  // by adding its records to the shared copy. Sample records from the demo are left out, and for plain settings the
+  // shared copy wins.
+  const sample = x => /\(sample\)|Sample (Customer|Novel|Manga|mug)/.test(JSON.stringify(x));
+  function mergeFirst(l, r){
+    if (r === undefined) return clone(l);
+    if (l === undefined) return clone(r);
+    if (isObj(l) && isObj(r)){ const out = {}; new Set([...Object.keys(r), ...Object.keys(l)]).forEach(k => { const v = mergeFirst(l[k], r[k]); if (v !== undefined) out[k] = v; }); return out; }
+    if ((idList(l) || Array.isArray(l) && !l.length) && (idList(r) || Array.isArray(r) && !r.length)){
+      const ids = new Set(r.map(x => String(x.id))), out = clone(r);
+      l.forEach(x => { if (!ids.has(String(x.id)) && !sample(x)) out.push(clone(x)); }); return out; }
+    return clone(r);
+  }
   function status(t, err){ lastErr = err ? t : ''; if (statusEl){ statusEl.textContent = t; statusEl.className = 'syncst'+(err ? ' err' : ''); } }
   const typing = () => { const a = document.activeElement; return a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== 'button'; };
   let rerender = false;
@@ -57,7 +70,7 @@
     for (const k of SHARED){
       const row = remote[k]; if (!row) continue;
       if (ver[k] === row.version) continue;
-      const merged = ver[k] == null ? clone(row.data) : merge(base[k], S[k], row.data);
+      const merged = ver[k] == null ? mergeFirst(S[k], row.data) : merge(base[k], S[k], row.data);
       if (!same(merged, S[k])){ S[k] = merged; changed = true; }
       base[k] = clone(row.data); ver[k] = row.version; IDB.put(k, base[k]);
     }
@@ -117,7 +130,7 @@
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pull().then(() => push()).catch(() => {}); });
     window.addEventListener('online', () => push());
   }
-  A.sync = {start, merge, pull:() => pull(), push};
+  A.sync = {start, merge, mergeFirst, pull:() => pull(), push};
 
   // ---------- owner: Team logins ----------
   const NAMES = () => ({staff:A.tierName('staff'), lead:A.tierName('lead'), manager:A.tierName('manager'), owner:A.tierName('owner')});
