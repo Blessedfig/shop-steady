@@ -205,7 +205,7 @@
     try { orders = await rpc('list_orders', {p_status:null}); }
     catch(e){ box.replaceChildren(h('p',{class:'msg err'}, /list_orders|schema cache/.test(e.message) ? 'Ordering is not set up yet. The owner needs to run the latest supabase/catalog.sql in Supabase.' : e.message)); return; }
     box.replaceChildren(lookupCard());
-    if (isMgr()) box.append(pasteCard());
+    if (isMgr()) box.append(pasteCard(), restockCard());
     syncReceiving(orders);
     if (!orders.length) box.append(h('div',{class:'card'}, h('p',null,'No orders yet. Find a title in '), h('a',{href:'#/titles'},'Title search'), h('p',{class:'small muted'},' and press Add to order next to the vendor you want.')));
     if (isMgr()) box.append(await reorderCard());
@@ -213,6 +213,58 @@
     if (drafts.length) box.append(h('h2',null,'Open orders'), ...drafts.map(orderCard));
     if (rest.length) box.append(h('h2',null,'Sent and recent'), ...rest.map(orderCard));
     if (!isMgr() && drafts.length) box.append(h('p',{class:'small muted'},'A manager or the owner sends orders.'));
+  }
+
+  // Restock what sold: pick dates and a word (manga, a publisher, a series), see every title that sold with what is
+  // on the shelf and on order, and build draft orders per vendor in one tap. Drafts are reviewed and sent below.
+  function restockCard(){
+    const today = new Date(), ago = d => isoDay(new Date(today.getTime() - d * 864e5));
+    const from = h('input',{type:'date', value:ago(28), 'aria-label':'Sold from'}), to = h('input',{type:'date', value:isoDay(today), 'aria-label':'Sold to'});
+    const q = h('input',{type:'search', placeholder:'manga, a publisher, a series… (blank = everything)', value:'manga', 'aria-label':'Which items'});
+    const cover = h('select',{'aria-label':'How much to restock'}, [['1','Bring back to what sold'],['1.5','What sold plus half'],['2','Double what sold'],['0.5','Half of what sold']].map(([v,t]) => h('option',{value:v}, t)));
+    const out = h('div',{class:'grid'});
+    const f = h('form',{class:'row'}, from, to, q, cover, h('button',{class:'btn', type:'submit'}, 'Show what sold'));
+    const card = h('details',{class:'card', open:true}, h('summary',null, h('b',null,'Restock what sold')),
+      h('p',{class:'small muted'},'Everything that sold in these dates: how many sold, how many are on the shelf now, how many are already on order, and how many to order. Each title goes to the best vendor (an active account first, then stock, then cost). You can move a title to another vendor. Building the drafts sends nothing: you review and send each order below.'), f, out);
+    async function run(){
+      out.replaceChildren(h('p',{class:'muted'},'Loading…'));
+      let groups;
+      try { groups = await rpc('restock_sold', {p_from:from.value, p_to:to.value, p_q:q.value.trim() || null, p_cover:+cover.value}); }
+      catch(e){ out.replaceChildren(h('p',{class:'msg err'}, /restock_sold|schema cache/.test(e.message) ? 'Needs the latest supabase/catalog.sql (section 16) and the Shopify link.' : e.message)); return; }
+      if (!groups.length){ out.replaceChildren(h('p',{class:'small muted'},'Nothing matching sold in those dates.')); return; }
+      // one row per title; the vendor can be changed, so rows are regrouped when building
+      const rows = [];
+      const lines = groups.flatMap(g => g.items);
+      const need = lines.filter(i => i.suggest > 0), units = need.reduce((a,i) => a + i.suggest, 0);
+      const est = need.reduce((a,i) => a + (i.cost != null ? i.cost * i.suggest : 0), 0);
+      const sum = h('p',null, lines.length + ' titles sold · ' + lines.reduce((a,i) => a + i.sold, 0) + ' copies · ' + need.length + ' titles to restock (' + units + ' copies' + (est ? ', about ' + fmt(est) + ' at cost' : '') + ')');
+      out.replaceChildren(sum);
+      groups.forEach(g => {
+        const sec = h('div',{class:'card'}, h('h3',null, g.vendor, ' ', h('span',{class:'chip ' + (g.orderable ? 'calm' : g.vendor_id ? 'amber' : 'grey')}, g.orderable ? 'Can order now' : g.vendor_id ? (g.status || 'Account pending') : 'No vendor')));
+        g.items.forEach(it => {
+          const qty = h('input',{type:'number', min:'0', max:'9999', value:String(it.suggest), style:'width:5em', 'aria-label':'Quantity for ' + it.title});
+          const opts = (it.alts || []).map(a => h('option',{value:a.vendor_id, selected:a.vendor_id === g.vendor_id}, a.vendor + (a.status !== 'Active' ? ' (' + a.status + ')' : '') + (a.cost != null ? ' · ' + fmt(+a.cost) : '') + (a.availability && a.availability !== 'unknown' ? ' · ' + (AV[a.availability] || [a.availability])[0] : '')));
+          const sel = opts.length ? h('select',{'aria-label':'Vendor for ' + it.title}, opts) : h('span',{class:'small muted'},'Link its Shopify vendor (' + (it.shopify_vendor || 'blank') + ') under Catalog imports');
+          rows.push({it, qty, sel});
+          sec.append(h('div',{class:'item'}, h('b',null, it.title),
+            h('span',{class:'small muted'}, [it.item_key.replace(/^sku:/,'SKU '), 'sold ' + it.sold, it.available + ' on shelf', it.on_order ? it.on_order + ' on order' : '', it.cost != null ? fmt(+it.cost) + ' cost' : '', it.price != null ? fmt(+it.price) + ' shelf' : ''].filter(Boolean).join(' · ')),
+            h('div',{class:'row'}, h('label',{class:'small'}, 'Order ', qty), sel)));
+        });
+        out.append(sec);
+      });
+      const build = h('button',{class:'btn', type:'button', onclick:async () => {
+        const send = rows.filter(r => r.sel.tagName === 'SELECT' && +r.qty.value > 0).map(r => ({vendor_id:r.sel.value, item_key:r.it.item_key, qty:Math.min(9999, Math.round(+r.qty.value))}));
+        if (!send.length) return toast('Nothing to order: set a quantity above 0');
+        build.disabled = true;
+        try { const res = await rpc('restock_to_orders', {p:send}); toast(res.lines + ' titles added to ' + res.orders + ' draft order' + (res.orders === 1 ? '' : 's')); A.route(); }
+        catch(e){ build.disabled = false; toast('Could not build the drafts: ' + e.message); }
+      }}, 'Build draft orders');
+      out.append(h('div',{class:'row'}, build, h('button',{class:'btn quiet', type:'button', onclick:() => download('restock-' + isoDay(today) + '.csv', 'text/csv', toCsv([['Vendor','ISBN/SKU','Title','Sold','On shelf','On order','Order','Cost each','Shelf price'],
+        ...rows.map(r => [r.sel.tagName === 'SELECT' ? r.sel.selectedOptions[0].textContent.split(' · ')[0] : 'No vendor', r.it.item_key.replace(/^sku:/,''), r.it.title, r.it.sold, r.it.available, r.it.on_order, r.qty.value, r.it.cost ?? '', r.it.price ?? ''])]))}, 'Download (.csv)')),
+        h('p',{class:'small muted'},'Titles at a vendor whose account is still pending are added to that vendor’s draft too, so the order is ready the day the account opens. Move them to an active vendor if you need them now.'));
+    }
+    f.addEventListener('submit', e => { e.preventDefault(); run(); });
+    return card;
   }
 
   // Running low in Shopify and sold in the last 30 days, grouped by the vendor you order each one through.

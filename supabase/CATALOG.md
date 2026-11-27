@@ -133,3 +133,12 @@ The timer runs only after Shopify is connected (it reuses that timer key).
 For every vendor that isn't Active yet, mail from its domain (taken from its emails and website) is filed under that vendor:
 replies, automatic acknowledgements and bounces. **Supplier mail waiting on you** lists replies and bounces until you mark them done.
 Opening a new account: use the vendor's online application first; email only when there is no form. Vendor setup puts the application link first.
+
+## Restock what sold (Orders screen)
+
+Orders > **Restock what sold** (managers and the owner). Pick the dates (last 4 weeks by default) and a word such as
+`manga`, a publisher or a series. Every matching title that sold in those dates is listed with copies sold, copies on
+the shelf (Shopify), copies already on an order, and a suggested quantity that brings the shelf back to what sold
+(or 1.5x, 2x, half). Each title is placed with the best vendor: an Active account first, then the best stock, then
+the lowest cost. You can move any title to another vendor that carries it. **Build draft orders** adds everything to
+one draft per vendor; nothing is sent until you send it on the Orders screen. Needs `catalog.sql` section 16.

@@ -1156,3 +1156,82 @@ end $$;
 -- 15. Price changes to Shopify (Shopify screen > Propose a change > Propose price; the owner sends them like cost changes).
 alter table public.shopify_changes drop constraint if exists shopify_changes_kind_check;
 alter table public.shopify_changes add constraint shopify_changes_kind_check check (kind in ('cost','vendor','stock','price'));
+
+-- 16. Restock what sold (Orders > Restock what sold). Pick dates and a word (manga, a publisher, a series, a
+--   Shopify product type); every title that sold in those dates comes back with how many sold, how many are on
+--   the shelf, how many are already on order, and a suggested quantity that brings the shelf back to what sold.
+--   Each title goes to the best vendor: an Active account first, then the best stock, then the lowest cost;
+--   the other vendors that carry it come along so a title can be moved. Nothing is sent from here: drafts are
+--   built with restock_to_orders and finalized on the Orders screen.
+create or replace function public.restock_sold(p_from date, p_to date default current_date, p_q text default null, p_cover numeric default 1)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare q text := nullif(trim(coalesce(p_q,'')), ''); d2 date := coalesce(p_to, current_date);
+begin
+  if public.role_rank(public.my_role()) < 3 then raise exception 'manager-only'; end if;
+  if p_from is null or p_from > d2 or d2 - p_from > 400 then raise exception 'pick up to 400 days'; end if;
+  return coalesce((
+    with v as (
+      select public.shopify_item_key(sv.barcode, sv.sku) as k, sv.* from public.shopify_variants sv
+      where coalesce(sv.status,'ACTIVE') <> 'ARCHIVED'
+    ), items as (
+      select v.k, max(v.product_title) as title, max(trim(v.vendor)) as sv_vendor, max(v.product_type) as ptype, max(v.price) as price,
+             coalesce(sum(v.available) filter (where coalesce(v.tracked, true)), 0)::int as avail, array_agg(v.variant_id) as variants
+      from v left join public.catalog_titles c on c.item_key = v.k
+      where v.k is not null
+        and (q is null or concat_ws(' ', v.product_title, v.vendor, v.product_type, c.publisher, c.imprint, c.series, c.product_class, c.subjects) ilike '%' || q || '%')
+      group by v.k
+    ), sold as (
+      select i.*,
+        (select coalesce(sum(l.qty),0) from public.shopify_order_lines l
+          where l.variant_id = any(i.variants) and l.day between p_from and d2 and not l.cancelled)::int as sold,
+        (select coalesce(sum(pl.qty),0) from public.purchase_order_lines pl join public.purchase_orders po on po.id = pl.po_id
+          where pl.item_key = i.k and po.status in ('draft','sent','confirmed'))::int as on_order
+      from items i
+    ), offers as (
+      select o.item_key as k, vd.id as vid, vd.name as vname, vd.status as vstatus, o.availability, public.offer_cost(o, c, vd, 1) as cost,
+             (vd.status <> 'Active')::int * 10 + case o.availability when 'in_stock' then 0 when 'low' then 1 when 'unknown' then 2
+               when 'forthcoming' then 3 when 'backorder' then 4 else 5 end as ord
+      from public.vendor_offers o join public.vendors vd on vd.id = o.vendor_id join public.catalog_titles c on c.item_key = o.item_key
+      where o.item_key in (select k from sold where sold > 0) and vd.status <> 'Not using'
+      union all -- the vendor the Shopify vendor name is linked to, when it has no offer row yet
+      select s.k, vd.id, vd.name, vd.status, 'unknown', null, (vd.status <> 'Active')::int * 10 + 2
+      from sold s join public.vendor_aliases a on lower(a.shopify_vendor) = lower(s.sv_vendor) join public.vendors vd on vd.id = a.vendor_id
+      where s.sold > 0 and vd.status <> 'Not using' and not exists (select 1 from public.vendor_offers o where o.item_key = s.k and o.vendor_id = vd.id)
+    ), picked as (
+      select s.*, greatest(0, ceil(s.sold * greatest(coalesce(p_cover,1), 0))::int - greatest(s.avail,0) - s.on_order) as suggest,
+        (select jsonb_build_object('vendor_id', x.vid, 'vendor', x.vname, 'status', x.vstatus, 'cost', x.cost, 'availability', x.availability)
+           from offers x where x.k = s.k order by x.ord, x.cost nulls last limit 1) as pick,
+        coalesce((select jsonb_agg(jsonb_build_object('vendor_id', x.vid, 'vendor', x.vname, 'status', x.vstatus, 'cost', x.cost, 'availability', x.availability)
+           order by x.ord, x.cost nulls last) from offers x where x.k = s.k), '[]'::jsonb) as alts
+      from sold s where s.sold > 0
+    ), groups as (
+      select jsonb_build_object(
+        'vendor_id', min(pick->>'vendor_id'), 'vendor', coalesce(min(pick->>'vendor'), 'No vendor set up for these yet'),
+        'status', min(pick->>'status'), 'orderable', coalesce(min(pick->>'status'),'') = 'Active',
+        'items', jsonb_agg(jsonb_build_object('item_key', k, 'title', title, 'shopify_vendor', sv_vendor, 'type', ptype,
+                   'sold', sold, 'available', avail, 'on_order', on_order, 'suggest', suggest, 'price', price,
+                   'cost', pick->'cost', 'availability', pick->'availability', 'alts', alts)
+                 order by suggest desc, sold desc, title)) as g
+      from picked group by coalesce(pick->>'vendor_id', 'none'))
+    select jsonb_agg(g order by (g->>'orderable')::boolean desc, (g->>'vendor_id') is null, g->>'vendor') from groups), '[]'::jsonb);
+end $$;
+revoke all on function public.restock_sold(date, date, text, numeric) from public, anon;
+grant execute on function public.restock_sold(date, date, text, numeric) to authenticated;
+
+-- Build draft orders from the restock list: [{vendor_id, item_key, qty}]. Adds to each vendor's open draft
+-- (one draft per vendor), so you review, change and send them on the Orders screen as usual.
+create or replace function public.restock_to_orders(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r jsonb; n int := 0; pos uuid[] := '{}'; po uuid;
+begin
+  if public.role_rank(public.my_role()) < 3 then raise exception 'manager-only'; end if;
+  if jsonb_typeof(p) <> 'array' or jsonb_array_length(p) > 2000 then raise exception 'send a list of up to 2000 lines'; end if;
+  for r in select * from jsonb_array_elements(p) loop
+    continue when coalesce((r->>'qty')::int, 0) < 1 or nullif(r->>'vendor_id','') is null;
+    po := public.add_to_order((r->>'vendor_id')::uuid, r->>'item_key', (r->>'qty')::int, 'Restock', null);
+    n := n + 1; if not po = any(pos) then pos := pos || po; end if;
+  end loop;
+  return jsonb_build_object('lines', n, 'orders', coalesce(array_length(pos,1),0));
+end $$;
+revoke all on function public.restock_to_orders(jsonb) from public, anon;
+grant execute on function public.restock_to_orders(jsonb) to authenticated;
