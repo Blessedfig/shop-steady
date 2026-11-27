@@ -143,7 +143,7 @@
 
   // ---------- team: people, pay rates, PINs ----------
   function teamView(v){
-    v.append(head('People · '+A.site().name, 'Team, pay and PINs', 'Each person gets a 4 to 6 digit PIN for the store tablet. Only managers and owners see pay.'));
+    v.append(head('People · '+A.site().name, 'Team, pay and PINs', 'Each person gets a 4 to 6 digit PIN for the store tablet. Only managers and owners see pay. Photo proof stays off unless someone is not doing their checklist: then their ticks need a photo.'));
     if (!isMgr()){ v.append(h('div',{class:'card'},'Only managers and owners can change the team.')); return; }
     ensure().then(() => {
       v.append(h('div',{class:'card'}, h('h2',null,'Team'), h('div',{class:'list'}, team().map(p => h('div',{class:'item'},
@@ -153,6 +153,7 @@
             if (!/^\d{4,6}$/.test(pin)) return toast('Use 4 to 6 digits');
             const hsh = await hashPin(S().site, pin); if (team().some(x => x !== p && x.pinHash === hsh)) return toast('Someone already has that PIN');
             p.pinHash = hsh; A.save(); toast('PIN changed'); }},'Change PIN'),
+          p.tier !== 'owner' ? h('button',{class:'btn quiet sm',type:'button','aria-pressed':String(!!p.photoProof),onclick:()=>{ p.photoProof = !p.photoProof; A.save(); toast(p.photoProof ? 'Photo proof is on for '+p.n : 'Photo proof is off'); A.route(); }}, p.photoProof ? 'Photo proof: on' : 'Photo proof: off') : null,
           p.tier !== 'owner' ? h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ const r = prompt('Hourly pay for '+p.n, String(p.rate||'')); if (r == null) return; const n = parseFloat(r); if (!(n >= 0)) return toast('Type a number'); p.rate = n; A.save(); A.route(); }},'Change pay') : null))))));
       const f = h('form',{class:'card grid'}, h('h2',null,'Add someone'),
         h('label',{class:'f'},'Name', h('input',{type:'text',name:'n',maxlength:'40',required:true})),
@@ -180,14 +181,44 @@
     return h('div',{class:'pinpad'}, out, h('div',{class:'pinkeys'}, keys.map(k => h('button',{class:'btn '+(k==='ok'?'':'ghost'),type:'button','aria-label':k==='clear'?'Clear':k==='ok'?'Enter':k,onclick:()=>press(k)}, k==='clear'?'Clear':k==='ok'?'Enter':k))));
   }
   function today(){ return isoDay(new Date()); }
+  // Photos: taken with the device camera, shrunk to about 100 KB, kept with the checklist record as evidence.
+  function takePhoto(){
+    return new Promise(res => {
+      const inp = h('input',{type:'file',accept:'image/*',capture:'environment',style:'display:none'}); document.body.append(inp);
+      inp.addEventListener('change', () => { const f = inp.files[0]; inp.remove(); if (!f) return res(null);
+        const img = new Image(); img.onload = () => { const sc = Math.min(1, 900/Math.max(img.width, img.height)), cv = document.createElement('canvas');
+          cv.width = Math.round(img.width*sc); cv.height = Math.round(img.height*sc); cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+          URL.revokeObjectURL(img.src); res(cv.toDataURL('image/jpeg', 0.7)); };
+        img.onerror = () => res(null); img.src = URL.createObjectURL(f); });
+      inp.click();
+    });
+  }
+  // A report that a step wasn't done: a photo keeps it from becoming one person's word against another's.
+  async function reportNotDone(task, who){
+    const photo = await takePhoto();
+    if (!photo) return toast('A report needs a photo of what wasn\'t done');
+    const note = (prompt('What wasn\'t done? (optional)') || '').slice(0,300);
+    X().reports = X().reports || [];
+    X().reports.unshift({id:uid(), site:S().site, date:today(), task, by:who || A.tier().name, at:new Date().toISOString(), photo, note, status:'open'});
+    if (X().reports.length > 60) X().reports.length = 60; // keeps this browser's storage small until photos move to the database
+    A.save(); toast('Report sent to managers'); A.route();
+  }
   function checklistCard(who){
     const d = today(), key = S().site+':'+d, done = (X().checks[key] = X().checks[key] || {});
     const L = lists(), card = h('div',{class:'card'}, h('h2',null,'Today\'s checklist'));
+    const needPhoto = !!(person(who) || {}).photoProof; // on only for someone with a documented performance issue
+    if (needPhoto) card.append(h('p',{class:'small muted'},'A photo is needed when you tick a step off.'));
     [['open','Opening'],['close','Closing']].forEach(([k,name]) => {
       card.append(h('h3',null,name));
       L[k].forEach((task,i) => { const id = k+i, c = done[id];
-        card.append(h('label',{class:'checkrow'}, h('input',{type:'checkbox',checked:!!c,onchange:e=>{ if (e.target.checked) done[id] = {by:who, at:new Date().toISOString()}; else delete done[id]; A.save(); A.route(); }}),
-          h('span',null, task, c ? h('span',{class:'small muted'},' · '+c.by.replace(' (sample)','')+' '+A.fmtTime(c.at)) : null))); });
+        const tick = h('input',{type:'checkbox',checked:!!c,onchange:async e=>{
+          if (!e.target.checked){ delete done[id]; A.save(); return A.route(); }
+          let photo = null;
+          if (needPhoto){ photo = await takePhoto(); if (!photo){ e.target.checked = false; return toast('Add a photo to tick this off'); } }
+          done[id] = {by:who, at:new Date().toISOString(), photo}; A.save(); A.route(); }});
+        card.append(h('div',{class:'checkline'}, h('label',{class:'checkrow'}, tick,
+          h('span',null, task, c ? h('span',{class:'small muted'},' · '+c.by.replace(' (sample)','')+' '+A.fmtTime(c.at)+(c.photo ? ' · photo' : '')) : null)),
+          h('button',{class:'linkbtn small',type:'button',onclick:()=>reportNotDone(task, who)},'Report not done'))); });
     });
     return card;
   }
@@ -262,6 +293,13 @@
       f.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(f), split = s => String(s).split('\n').map(x => x.trim()).filter(Boolean);
         X().lists[S().site] = {open:split(d.get('open')), close:split(d.get('close'))}; A.save(); toast('Saved'); A.route(); });
       v.append(f, checklistCard(whoAmI()));
+      const reps = (X().reports || []).filter(r => r.site === S().site);
+      v.append(h('div',{class:'card'}, h('h2',null,'Reports of steps not done'),
+        h('p',{class:'small muted'},'Each report has a photo, so it is a record, not hearsay. Talk it through with the person before it goes in their file.'),
+        reps.length ? h('div',{class:'list'}, reps.map(r => h('div',{class:'item'}, h('b',null, r.task), h('span',{class:'small muted'}, 'Reported by '+r.by.replace(' (sample)','')+' · '+A.fmtTime(r.at)+(r.note ? ' · '+r.note : '')),
+          h('img',{src:r.photo,alt:'Photo for: '+r.task,class:'proof'}),
+          h('div',{class:'row'}, h('span',{class:'chip '+(r.status==='open'?'amber':'calm')}, r.status==='open'?'Open':'Handled'),
+            r.status === 'open' ? h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ r.status = 'handled'; A.save(); A.route(); }},'Mark handled') : null)))) : h('p',{class:'muted'},'No reports.')));
     });
   }
 

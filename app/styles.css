@@ -236,3 +236,5 @@ body.kiosk .shell{grid-template-columns:1fr}
 .pinkeys .btn{min-height:64px;font-size:1.3rem;padding:0}
 textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:.6rem .7rem;background:var(--bg)}
 .camview{width:100%;max-width:420px;border-radius:12px;background:#000}
+.checkline{display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap}
+img.proof{max-width:260px;width:100%;border-radius:12px;border:1px solid var(--line)}
