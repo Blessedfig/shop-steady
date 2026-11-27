@@ -67,7 +67,20 @@
     })();
     return ready;
   }
-  const X = () => S().shifts;
+  const X = () => { const x = S().shifts; movePay(x); return x; };
+  // ---------- pay rates live apart from the team list ----------
+  // 'pay' is a shared area only a store manager or the owner can read (supabase/private-areas.sql), so staff phones
+  // never receive anyone's rate. Each person still sees their own: the database matches their sign-in email.
+  // pay = {people:{<team id>:{rate, email}}}. Older copies kept rate on the team list; a manager's device moves it.
+  const PAY = () => { const s = S(); s.pay = s.pay || {}; s.pay.people = s.pay.people || {}; return s.pay; };
+  function movePay(x){
+    if (!x || !x.team || !(!A.myRole || MGR.includes(A.myRole))) return;
+    for (const site in x.team) (x.team[site]||[]).forEach(p => { if (p.rate === undefined) return;
+      const e = PAY().people[p.id] = PAY().people[p.id] || {}; if (e.rate == null) e.rate = p.rate; delete p.rate; });
+  }
+  const payOf = p => (p && PAY().people[p.id]) || {};
+  const rateOf = p => { const e = payOf(p); return e.rate != null ? e.rate : (p && p.rate) || 0; };
+  const setPay = (p, k, val) => { const e = PAY().people[p.id] = PAY().people[p.id] || {}; e[k] = val; };
   const team = () => (X().team[S().site] = X().team[S().site] || []);
   const sched = () => (X().sched[S().site] = X().sched[S().site] || []);
   const punches = () => (X().punches[S().site] = X().punches[S().site] || []);
@@ -94,6 +107,16 @@
     return {reg, ot, pay:+(rate*reg/60 + rate*1.5*ot/60).toFixed(2)};
   }
 
+  // A person's own week: hours from the time clock and, when their sign-in is linked, their pay estimate.
+  function myWeek(wk){
+    const signedIn = !!A.myRole, me = signedIn ? (A.myPay && team().find(p => p.id === A.myPay.id)) : person(whoAmI());
+    if (!me) return h('div',{class:'card soft'}, h('h2',null,'Your hours and pay'), h('p',{class:'small muted'},'Ask a manager to link your sign-in to your name on the team list. Then your hours and pay show here.'));
+    const m = weekHours(S().site, wk)[me.n] || 0, rate = signedIn ? +(A.myPay.rate || 0) : rateOf(me), x = payFor(rate, m);
+    return h('div',{class:'card soft'}, h('h2',null,'Your hours and pay'),
+      h('p',null, hrs(m)+' h worked this week'+(x.ot ? ' ('+hrs(x.ot)+' h overtime)' : '')+(rate ? ' · about '+money(x.pay)+' before taxes at '+money(rate)+'/h' : '')),
+      h('p',{class:'small muted'},'Only you, managers and the owner can see this.'));
+  }
+
   // ---------- schedule (week view) ----------
   function schedule(v){
     v.append(head('Shifts · '+A.site().name, 'Schedule', isMgr() ? 'Plan the week. Staff see their own shifts on their phones.' : 'Your upcoming shifts.'));
@@ -117,7 +140,7 @@
             : h('p',{class:'small muted'}, mine ? 'Not scheduled' : 'No shifts')));
       });
       v.append(grid);
-      if (!isMgr()) return;
+      if (!isMgr()){ v.append(myWeek(wk)); return; }
       // add a shift
       const f = h('form',{class:'card grid'}, h('h2',null,'Add a shift'),
         h('label',{class:'f'},'Day', h('select',{name:'date'}, days.map(d => h('option',{value:d}, DOW[new Date(d+'T12:00:00').getDay()]+' '+A.fmtDate(d))))),
@@ -143,27 +166,31 @@
 
   // ---------- team: people, pay rates, PINs ----------
   function teamView(v){
-    v.append(head('People · '+A.site().name, 'Team, pay and PINs', 'Each person gets a 4 to 6 digit PIN for the store tablet. Only managers and owners see pay. Photo proof stays off unless someone is not doing their checklist: then their ticks need a photo.'));
+    v.append(head('People · '+A.site().name, 'Team, pay and PINs', 'Each person gets a 4 to 6 digit PIN for the store tablet. Only managers and owners see pay; each person can see their own on their Schedule. Photo proof stays off unless someone is not doing their checklist: then their ticks need a photo.'));
     if (!isMgr()){ v.append(h('div',{class:'card'},'Only managers and owners can change the team.')); return; }
     ensure().then(() => {
       v.append(h('div',{class:'card'}, h('h2',null,'Team'), h('div',{class:'list'}, team().map(p => h('div',{class:'item'},
-        h('b',null,p.n), h('span',{class:'small muted'}, A.tierName(p.tier)+(p.rate ? ' · '+money(p.rate)+'/h' : '')),
+        h('b',null,p.n), h('span',{class:'small muted'}, A.tierName(p.tier)+(rateOf(p) ? ' · '+money(rateOf(p))+'/h' : '')+(payOf(p).email ? ' · sees own pay as '+payOf(p).email : '')),
         h('div',{class:'row'},
           h('button',{class:'btn quiet sm',type:'button',onclick:async ()=>{ const pin = prompt('New PIN for '+p.n+' (4 to 6 digits)'); if (!pin) return;
             if (!/^\d{4,6}$/.test(pin)) return toast('Use 4 to 6 digits');
             const hsh = await hashPin(S().site, pin); if (team().some(x => x !== p && x.pinHash === hsh)) return toast('Someone already has that PIN');
             p.pinHash = hsh; A.save(); toast('PIN changed'); }},'Change PIN'),
           p.tier !== 'owner' ? h('button',{class:'btn quiet sm',type:'button','aria-pressed':String(!!p.photoProof),onclick:()=>{ p.photoProof = !p.photoProof; A.save(); toast(p.photoProof ? 'Photo proof is on for '+p.n : 'Photo proof is off'); A.route(); }}, p.photoProof ? 'Photo proof: on' : 'Photo proof: off') : null,
-          p.tier !== 'owner' ? h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ const r = prompt('Hourly pay for '+p.n, String(p.rate||'')); if (r == null) return; const n = parseFloat(r); if (!(n >= 0)) return toast('Type a number'); p.rate = n; A.save(); A.route(); }},'Change pay') : null))))));
+          p.tier !== 'owner' ? h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ const r = prompt('Hourly pay for '+p.n, String(rateOf(p)||'')); if (r == null) return; const n = parseFloat(r); if (!(n >= 0)) return toast('Type a number'); setPay(p, 'rate', n); A.save(); A.route(); }},'Change pay') : null,
+          p.tier !== 'owner' ? h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ const r = prompt('The email '+p.n+' signs in with, so they can see their own hours and pay (leave empty to unlink)', payOf(p).email||''); if (r == null) return; const em = r.trim().toLowerCase();
+            if (em && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return toast('That does not look like an email'); setPay(p, 'email', em || null); A.save(); A.route(); }}, payOf(p).email ? 'Change sign-in link' : 'Link their sign-in') : null))))));
       const f = h('form',{class:'card grid'}, h('h2',null,'Add someone'),
         h('label',{class:'f'},'Name', h('input',{type:'text',name:'n',maxlength:'40',required:true})),
         h('label',{class:'f'},'Role', h('select',{name:'tier'}, A.D.TIERS.map(t => h('option',{value:t.id},A.tierName(t.id))))),
         h('label',{class:'f'},'Hourly pay ($)', h('input',{type:'number',name:'rate',step:'0.25',min:'0'})),
+        h('label',{class:'f'},'Their sign-in email (optional: lets them see their own hours and pay)', h('input',{type:'email',name:'em',maxlength:'120',autocomplete:'off'})),
         h('label',{class:'f'},'PIN (4 to 6 digits)', h('input',{type:'password',name:'pin',inputmode:'numeric',pattern:'\\d{4,6}',autocomplete:'off',required:true})),
         h('button',{class:'btn',type:'submit'},'Add to team'));
       f.addEventListener('submit', async e => { e.preventDefault(); const d = new FormData(f);
         const hsh = await hashPin(S().site, d.get('pin')); if (team().some(x => x.pinHash === hsh)) return toast('Someone already has that PIN');
-        team().push({id:uid(), n:String(d.get('n')).trim(), tier:d.get('tier'), rate:+d.get('rate')||0, pinHash:hsh}); A.save(); toast('Added'); A.route(); });
+        const np = {id:uid(), n:String(d.get('n')).trim(), tier:d.get('tier'), pinHash:hsh}; team().push(np);
+        setPay(np, 'rate', +d.get('rate')||0); if (String(d.get('em')||'').trim()) setPay(np, 'email', String(d.get('em')).trim().toLowerCase()); A.save(); toast('Added'); A.route(); });
       v.append(f);
     });
   }
@@ -241,6 +268,7 @@
       const sch = sched().filter(s => s.date === today() && s.who === who);
       const card = h('div',{class:'card kioskcard'}, h('h2',null,'Hi, '+who.replace(' (sample)','')),
         h('p',null, open ? 'Clocked in since '+A.fmtTime(open.in)+'.' : 'You are clocked out.'),
+        h('p',{class:'small muted'},'This week so far: '+hrs(weekHours(S().site, weekStart(today()))[who] || 0)+' h'),
         sch.length ? h('p',{class:'small muted'},'Scheduled today: '+sch.map(s => tShort(s.start)+' to '+tShort(s.end)).join(', ')) : null,
         h('div',{class:'row'},
           open ? h('button',{class:'btn',type:'button',onclick:()=>{ open.out = new Date().toISOString(); A.save(); toast('Clocked out. Thanks!'); S().kioskWho = null; A.save(); A.route(); }},'Clock out')
@@ -264,17 +292,17 @@
         h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ S().tsWeek = addDays(wk,-7); A.save(); A.route(); }},'‹ Last week'),
         h('b',null,'Week of '+A.fmtDate(wk)),
         h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ S().tsWeek = addDays(wk,7); A.save(); A.route(); }},'Next week ›')));
-      const rows = team().filter(p => p.tier !== 'owner').map(p => { const m = byWho[p.n]||0, x = payFor(p.rate||0, m); return {p, m, x}; });
+      const rows = team().filter(p => p.tier !== 'owner').map(p => { const m = byWho[p.n]||0, x = payFor(rateOf(p), m); return {p, m, x}; });
       const tb = h('tbody');
       rows.forEach(r => tb.append(h('tr',null, h('td',null,r.p.n), h('td',null,hrs(r.x.reg)+' h'),
-        h('td',null, r.x.ot ? h('span',{class:'chip amber'}, hrs(r.x.ot)+' h') : '0'), h('td',null,money(r.p.rate||0)), h('td',null,money(r.x.pay)))));
+        h('td',null, r.x.ot ? h('span',{class:'chip amber'}, hrs(r.x.ot)+' h') : '0'), h('td',null,money(rateOf(r.p))), h('td',null,money(r.x.pay)))));
       const total = rows.reduce((t,r) => t + r.x.pay, 0);
       v.append(h('div',{class:'card'},
         h('div',{class:'tablewrap',tabindex:'0',role:'region','aria-label':'Timesheet'},
           h('table',{class:'t'}, h('thead',null,h('tr',null,h('th',null,'Person'),h('th',null,'Regular'),h('th',null,'Overtime'),h('th',null,'Rate'),h('th',null,'Pay before taxes'))), tb)),
         h('p',null, h('b',null,'Total: '+money(total)), h('span',{class:'small muted'},' Employer payroll taxes add roughly 8 to 10% on top (Social Security, Medicare, unemployment). The hiring planner will break this down.')),
         h('div',{class:'row'}, h('button',{class:'btn ghost sm',type:'button',onclick:()=>download('payroll-'+wk+'.csv','text/csv',
-          toCsv([['Week starting','Name','Regular hours','Overtime hours','Rate','Gross pay'], ...rows.map(r => [wk, r.p.n, hrs(r.x.reg), hrs(r.x.ot), (r.p.rate||0).toFixed(2), r.x.pay.toFixed(2)])]))},'Download for payroll (.csv)'))));
+          toCsv([['Week starting','Name','Regular hours','Overtime hours','Rate','Gross pay'], ...rows.map(r => [wk, r.p.n, hrs(r.x.reg), hrs(r.x.ot), rateOf(r.p).toFixed(2), r.x.pay.toFixed(2)])]))},'Download for payroll (.csv)'))));
       const recent = punches().filter(p => p.in.slice(0,10) >= wk && p.in.slice(0,10) < addDays(wk,7)).sort((a,b) => b.in.localeCompare(a.in));
       v.append(h('div',{class:'card'}, h('h2',null,'Clock-ins this week'),
         recent.length ? h('div',{class:'list'}, recent.map(p => h('div',{class:'item'}, h('b',null,p.who), h('span',{class:'small muted'}, A.fmtTime(p.in)+' to '+(p.out ? A.fmtTime(p.out) : 'still clocked in')+(p.brk ? ' · '+p.brk+' min break' : ''))))) : h('p',{class:'muted'},'No one has clocked in this week. Try Store mode.')));
@@ -306,11 +334,11 @@
 
   A.register({id:'shifts', name:'Shifts and time clock', what:'Weekly schedule, store-mode tablet with PINs, clock in and out, timesheets with overtime and a payroll export.', tiers:['staff','lead','manager','owner'],
     views:{schedule:{t:'Schedule', ic:'📅', render:schedule}, kiosk:{t:'Store mode', ic:'🔢', render:kiosk},
-           checklists:{t:'Checklists', ic:'✅', render:checklists}, team:{t:'Team', ic:'👥', render:teamView}, timesheets:{t:'Timesheets', ic:'⏱️', render:timesheets}}});
+           checklists:{t:'Checklists', ic:'✅', render:checklists}, team:{t:'Team', ic:'👥', render:teamView, min:'manager'}, timesheets:{t:'Timesheets', ic:'⏱️', render:timesheets, min:'manager'}}});
   // Owner card on Home: who is clocked in right now and this week's labor estimate
   A.ownerHooks.push(v => { ensure().then(() => {
     const on = punches().filter(p => !p.out), wk = weekStart(today()), byWho = weekHours(S().site, wk);
-    const cost = team().reduce((t,p) => t + payFor(p.rate||0, byWho[p.n]||0).pay, 0);
+    const cost = team().reduce((t,p) => t + payFor(rateOf(p), byWho[p.n]||0).pay, 0);
     v.append(h('div',{class:'card'}, h('h2',null,'Staff right now'),
       h('p',null, on.length ? 'Clocked in: '+on.map(p => p.who).join(', ') : 'Nobody is clocked in.'),
       h('p',{class:'small muted'},'Labor so far this week: '+money(cost)+' before taxes.')));

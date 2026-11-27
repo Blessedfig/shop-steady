@@ -10,7 +10,9 @@
 (function(){
   const A = window.SSApp; if (!A) return;
   const {h, head, toast} = A;
-  const SHARED = ['inv','exp','shifts','voice','people','notes','tax','setup','mods','scans','writeoffs']; // 'catalog' is shared separately by count.js
+  const SHARED = ['inv','exp','shifts','voice','people','notes','tax','setup','mods','scans','writeoffs','trips','pay','receiving','costs']; // 'catalog' is shared separately by count.js
+  // Only a store manager or the owner can read or save these (supabase/private-areas.sql): staff phones never get them.
+  const PRIVATE = ['writeoffs','trips','pay','costs'];
   const RANK = {staff:1, lead:2, manager:3, owner:4};
   const VKEY = 'shop-steady-sync';
   let sb = null, ver = {}, base = {}, busy = false, again = false, timer = null, statusEl = null, lastErr = '';
@@ -85,7 +87,7 @@
       for (const k of SHARED){
         if (S[k] === undefined || same(S[k], base[k])) continue;
         if ((k === 'setup' || k === 'mods') && A.myRole !== 'owner') continue;
-        if (k === 'writeoffs' && !(A.myRole === 'owner' || A.myRole === 'manager')) continue;
+        if (PRIVATE.includes(k) && !(A.myRole === 'owner' || A.myRole === 'manager')) continue;
         for (let tries = 0; tries < 4; tries++){
           status('Saving…');
           const snap = clone(S[k]);
@@ -119,6 +121,9 @@
     const r = await sb.rpc('my_role');
     A.myRole = r.error || !r.data ? 'staff' : r.data;
     if (r.error) toast('Roles are not set up in the database yet (run supabase/sync.sql).');
+    // this person's own pay rate, if a manager linked their sign-in on the Team screen
+    if (!(A.myRole === 'owner' || A.myRole === 'manager')){ const S = A.state(); PRIVATE.forEach(k => { delete S[k]; delete ver[k]; }); A.save(true); } // nothing private stays on a staff phone
+    try { const p = await sb.rpc('my_pay'); A.myPay = p.error ? null : p.data; } catch(e){ A.myPay = null; }
     applyRole();
     const who = document.getElementById('whoEmail');
     if (who && !statusEl){ statusEl = h('span',{class:'syncst','aria-live':'polite'},''); who.after(statusEl); }

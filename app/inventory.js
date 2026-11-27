@@ -82,7 +82,7 @@
       h('button',{class:'btn quiet sm',type:'button',onclick:()=>download('expenses-'+isoDay(new Date())+'.csv','text/csv',toCsv([['Date','Store','Category','Amount','Note'], ...ex.map(x=>[x.date,x.site,x.cat,x.amt.toFixed(2),x.note])]))},'Download all expenses (.csv)'));
   }
 
-  A.register({id:'inventory', name:'Inventory and reorders', what:'Stock by ISBN or SKU, low-stock flags, suggested orders per vendor, consignment and used copies.', tiers:['staff','lead','manager','owner'],
+  A.register({id:'inventory', name:'Inventory and reorders', what:'Stock by ISBN or SKU, low-stock flags, suggested orders per vendor, consignment and used copies.', tiers:['lead','manager','owner'],
     views:{inventory:{t:'Inventory', ic:'📚', render:inventory}}});
   A.register({id:'expenses', name:'Expenses', what:'Receipt log by category with CSV export for your bookkeeper.', tiers:['manager','owner'],
     views:{expenses:{t:'Expenses', ic:'🧾', render:expenses}}});

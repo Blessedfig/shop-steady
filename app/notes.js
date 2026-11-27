@@ -103,6 +103,6 @@
       isMgr() && list.length ? h('div',{class:'row'}, h('button',{class:'btn quiet sm',type:'button',onclick:()=>download('notes-'+isoDay(new Date())+'.csv','text/csv',toCsv([['When','Type','About','Written by','Note','Original words'], ...list.map(x => [x.when,KINDS[x.kind],x.about,x.by,x.text,x.original])]))},'Download (.csv)')) : null));
   }
 
-  A.register({id:'notes', name:'Notes and logs', what:'Quick notes in your own words, turned into professional notes for shift logs, customers, incidents and employee files. The original words are kept.', tiers:['staff','lead','manager','owner'],
+  A.register({id:'notes', name:'Notes and logs', what:'Quick notes in your own words, turned into professional notes for shift logs, customers, incidents and employee files. The original words are kept.', tiers:['lead','manager','owner'],
     views:{notes:{t:'Notes', ic:'📝', render:view}}});
 })();

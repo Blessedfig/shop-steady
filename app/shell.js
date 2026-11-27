@@ -56,18 +56,22 @@
   // ---------- views, modules and role tiers ----------
   // VIEWS: id -> {t:title, ic:icon, mod:module id}. Modules switch on/off per store and per role (owner decides).
   const VIEWS = {home:{t:'Home', ic:'🏠'}}, R = {}, homeHooks = [], ownerHooks = [];
-  function register(mod){ // mod: {id, name, what, tiers:[...], views:{id:{t,ic,render}}}
+  // A view can also say min:'manager' (that role and up, whatever the module allows) and hidden:true (reached by link only).
+  function register(mod){ // mod: {id, name, what, tiers:[...], views:{id:{t,ic,render,min,hidden}}}
     D.MODULES[mod.id] = D.MODULES[mod.id] || {name:mod.name, what:mod.what, tiers:mod.tiers};
-    for (const v in mod.views){ VIEWS[v] = {t:mod.views[v].t, ic:mod.views[v].ic, mod:mod.id}; R[v] = mod.views[v].render; }
+    for (const v in mod.views){ const x = mod.views[v]; VIEWS[v] = {t:x.t, ic:x.ic, mod:mod.id, min:x.min, hidden:!!x.hidden}; R[v] = x.render; }
   }
   // A module starts on when the location's business type lists it (or lists no modules at all); the owner can change it.
   const modState = m => ((S.mods[S.site]||{})[m]) || {on:!btype().modules || btype().modules.includes(m), tiers:(D.MODULES[m]||{}).tiers || D.TIERS.map(t=>t.id)};
-  const viewOn = v => { const m = VIEWS[v] && VIEWS[v].mod; if (!m) return true; const st = modState(m); return st.on && st.tiers.includes(S.tier); };
+  const RANK = {staff:1, lead:2, manager:3, owner:4};
+  const viewOn = v => { const m = VIEWS[v] && VIEWS[v].mod; if (!m) return true; if (VIEWS[v].min && (RANK[S.tier]||1) < RANK[VIEWS[v].min]) return false;
+    const st = modState(m); return st.on && st.tiers.includes(S.tier); };
+  const listed = v => viewOn(v) && !VIEWS[v].hidden;
 
   R.home = v => {
     v.append(head(site().name+' · '+btype().name, 'Good to see you', 'Pick what you need. Owners can turn modules on or off for each role under Modules.'));
     const g = h('div',{class:'grid g3'});
-    Object.keys(VIEWS).filter(k => k !== 'home' && viewOn(k)).forEach(k => g.append(h('a',{class:'tile',href:'#/'+k}, h('span',{class:'ic','aria-hidden':'true'},VIEWS[k].ic), h('b',null,VIEWS[k].t))));
+    Object.keys(VIEWS).filter(k => k !== 'home' && listed(k)).forEach(k => g.append(h('a',{class:'tile',href:'#/'+k}, h('span',{class:'ic','aria-hidden':'true'},VIEWS[k].ic), h('b',null,VIEWS[k].t))));
     v.append(g);
     homeHooks.forEach(f => { try { f(v); } catch(e){ console.error(e); } });
     if (S.tier === 'owner') ownerHooks.forEach(f => { try { f(v); } catch(e){ console.error(e); } });
@@ -88,7 +92,7 @@
 
   function renderNav(view){
     const nav = $('nav'); nav.textContent = '';
-    Object.keys(VIEWS).filter(viewOn).filter(k => k !== 'modules' || S.tier === 'owner')
+    Object.keys(VIEWS).filter(listed).filter(k => k !== 'modules' || S.tier === 'owner')
       .forEach(k => nav.append(h('a',{href:'#/'+k,'aria-current':k===view?'page':null}, h('span',{class:'ic','aria-hidden':'true'},VIEWS[k].ic), VIEWS[k].t)));
   }
   function fillSwitchers(){
@@ -100,7 +104,17 @@
   $('siteSel').addEventListener('change', e => { S.site = e.target.value; save(); fillSwitchers(); route(); });
   let current = 'home', param = '';
   function go(v){ if (location.hash === '#/'+v) route(); else location.hash = '#/'+v; }
+  // Nov 2026: the first level (Bookseller) became the basic one: store mode, checklists, schedule, own pay, Team voice.
+  // Stock, receiving, customers and vendors, notes and tax records start at Shift lead. Owners who saved module
+  // settings before that get the change once; they can still turn any module back on for the first level.
+  const BASIC_OFF = ['count','inventory','notes','people','taxlog','receiving'];
+  function basicTier(){
+    if (!S.mods || S.mods._basic2 || (window.SSApp.myRole && window.SSApp.myRole !== 'owner')) return;
+    for (const site in S.mods) if (site !== '_basic2' && S.mods[site]) BASIC_OFF.forEach(m => { const st = S.mods[site][m]; if (st && st.tiers) st.tiers = st.tiers.filter(t => t !== 'staff'); });
+    S.mods._basic2 = true; save();
+  }
   function route(){
+    basicTier();
     const m = (location.hash||'').match(/^#\/([a-z]+)(?:\/(.*))?/);
     current = m && VIEWS[m[1]] && viewOn(m[1]) ? m[1] : 'home';
     param = m && m[2] ? decodeURIComponent(m[2]) : '';
