@@ -42,13 +42,13 @@ a{color:var(--pine)}
 /* Header */
 .top{border-bottom:1px solid var(--line);background:var(--surface);position:sticky;top:0;z-index:10}
 .top .wrap{display:flex;align-items:center;justify-content:space-between;gap:.25rem 1rem;flex-wrap:wrap;padding-block:.5rem}
-.brand{min-height:44px;font:800 1.15rem/1 var(--display);display:flex;align-items:center;gap:.6rem;color:var(--ink);text-decoration:none}
+.brand{min-height:48px;font:800 1.15rem/1 var(--display);display:flex;align-items:center;gap:.6rem;color:var(--ink);text-decoration:none}
 .brand-mark{width:24px;height:24px;border-radius:50%;background:conic-gradient(var(--night) 0 50%,var(--sun) 50% 100%);box-shadow:0 0 0 1px var(--line-strong);flex:none}
 .top nav{display:flex;gap:.1rem 1.1rem;flex-wrap:wrap;font-size:.98rem;align-items:center}
-.top nav a{color:var(--muted);text-decoration:none;min-height:44px;display:inline-flex;align-items:center}
+.top nav a{color:var(--muted);text-decoration:none;min-height:48px;display:inline-flex;align-items:center}
 .top nav a:hover,.top nav a[aria-current="page"]{color:var(--ink)}
 .top nav a[aria-current="page"]{font-weight:700}
-.top nav a.btn{color:var(--bg);min-height:40px;padding:.5em 1em}
+.top nav a.btn{color:var(--bg);min-height:48px;padding:.5em 1em}
 
 /* Buttons */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;min-height:48px;font:800 1.05rem/1.1 var(--display);padding:.75em 1.3em;border-radius:12px;text-decoration:none;border:1px solid var(--pine);cursor:pointer}
@@ -90,7 +90,7 @@ ul.ticks li::after{content:"";position:absolute;left:.36rem;top:.5em;width:.3rem
 .roles{display:grid;gap:1rem}
 .roles > input{position:absolute;opacity:0;pointer-events:none}
 .roles .tabs{display:flex;gap:.5rem;flex-wrap:wrap}
-.roles .tabs label{font:700 1rem/1 var(--display);min-height:44px;display:inline-flex;align-items:center;padding:.6rem 1.15rem;border-radius:99px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);cursor:pointer}
+.roles .tabs label{font:700 1rem/1 var(--display);min-height:48px;display:inline-flex;align-items:center;padding:.6rem 1.15rem;border-radius:99px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);cursor:pointer}
 .roles .pane{display:none}
 #r-owner:checked ~ .tabs label[for="r-owner"],#r-manager:checked ~ .tabs label[for="r-manager"],#r-staff:checked ~ .tabs label[for="r-staff"]{background:var(--pine);border-color:var(--pine);color:var(--bg)}
 #r-owner:focus-visible ~ .tabs label[for="r-owner"],#r-manager:focus-visible ~ .tabs label[for="r-manager"],#r-staff:focus-visible ~ .tabs label[for="r-staff"]{outline:3px solid var(--pine);outline-offset:2px}
@@ -139,7 +139,7 @@ blockquote{margin:0;font:700 clamp(1.2rem,2.4vw,1.5rem)/1.35 var(--display);colo
 
 /* Types */
 .types{display:flex;flex-wrap:wrap;gap:.6rem}
-.types span{display:inline-flex;align-items:center;gap:.5rem;min-height:44px;padding:.5rem 1rem;border-radius:99px;background:var(--surface);border:1px solid var(--line);font:700 .98rem/1 var(--display)}
+.types span{display:inline-flex;align-items:center;gap:.5rem;min-height:48px;padding:.5rem 1rem;border-radius:99px;background:var(--surface);border:1px solid var(--line);font:700 .98rem/1 var(--display)}
 
 /* FAQ */
 details{border:1px solid var(--line);border-radius:14px;background:var(--surface);padding:0 1.1rem}
@@ -162,13 +162,13 @@ details p{padding-bottom:1rem;color:var(--muted)}
 .feature + .feature{margin-top:clamp(2.5rem,6vw,4rem)}
 .feature.flip > :first-child{order:2}
 .jump{display:flex;flex-wrap:wrap;gap:.5rem}
-.jump a{min-height:44px;display:inline-flex;align-items:center;padding:.5rem 1rem;border-radius:99px;background:var(--surface);border:1px solid var(--line);text-decoration:none;font:700 .95rem/1 var(--display)}
+.jump a{min-height:48px;display:inline-flex;align-items:center;padding:.5rem 1rem;border-radius:99px;background:var(--surface);border:1px solid var(--line);text-decoration:none;font:700 .95rem/1 var(--display)}
 .status{display:flex;gap:.5rem;flex-wrap:wrap}
 
 footer{border-top:1px solid var(--line);padding-block:2rem;font-size:.92rem;color:var(--muted);background:var(--surface)}
 footer .wrap{display:grid;gap:.9rem}
 footer nav{display:flex;gap:.2rem 1.2rem;flex-wrap:wrap}
-footer nav a{min-height:44px;display:inline-flex;align-items:center}
+footer nav a{min-height:48px;display:inline-flex;align-items:center}
 
 @media (max-width:900px){
   .hero .wrap,.pane,.story,.feature{grid-template-columns:1fr}

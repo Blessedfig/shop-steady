@@ -254,3 +254,15 @@ img.proof{max-width:260px;width:100%;border-radius:12px;border:1px solid var(--l
 h1{font-family:var(--script);font-weight:400;letter-spacing:.005em}
 .eyebrow{color:var(--brandy)}
 .syncst{font-size:.78rem;color:var(--muted);margin-left:.4rem}.syncst.err{color:var(--amber)}
+
+/* Core Design Workbook rules (Laws of UX): 17px body, 15px smallest text, 48px tap targets with room between them,
+   and on phones one big 56px main button in the thumb zone (Fitts's law). */
+html{font-size:106.25%}
+.switch select,.linkbtn,nav.side a,.btn.sm,button.chip,.chat-tabs button,.chat-chips button,.tabs button,.checkrow,.about summary,.help summary{min-height:48px}
+.seg button{min-height:48px;min-width:48px}
+.who,.stat span,.foot,.syncst,.testbar{font-size:.9rem}
+.bval,.blab{font-size:.76rem}
+@media (max-width:600px){
+  .btn:not(.sm):not(.ghost):not(.quiet){min-height:56px;font-size:1.05rem}
+  .card > .btn:last-child:not(.sm),form > .btn:last-child:not(.sm){width:100%}
+}
