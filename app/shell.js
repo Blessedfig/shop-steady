@@ -167,7 +167,9 @@
     actions:[{type:'Action.OpenUrl', title:'Open in the app', url:appUrl(e)}]}}]});
   const chatPayload = e => ({text:'*'+e.title+'*\n'+fmtDate(e.date)+(e.time?' · '+e.time:'')+'\n'+(e.note||'')+'\n<'+appUrl(e)+'|Open in the app>'});
 
-  window.SSApp = {D, h, state:()=>S, save, toast, copy, site, tier, btype, tierName, setupOf, fresh, fmtDate, fmtTime, money, head, download, toIcs, toCsv, gcalUrl, outlookUrl, csvCell,
+  // The person doing something: who tapped in on the store tablet, else the signed-in person's name, else the level.
+  const me = () => (S.kioskWho && Date.now() - S.kioskWho.at < 120000 && S.kioskWho.n) || (window.SSApp && window.SSApp.myName) || tier().name;
+  window.SSApp = {D, h, me, state:()=>S, save, toast, copy, site, tier, btype, tierName, setupOf, fresh, fmtDate, fmtTime, money, head, download, toIcs, toCsv, gcalUrl, outlookUrl, csvCell,
     teamsPayload, chatPayload, R, VIEWS, register, viewOn, route:()=>route(), go, isoDay, addDays, uid, renderNav:()=>renderNav(current), fillSwitchers, param:()=>param, homeHooks, ownerHooks};
 
   // ---------- sign-in: password, emailed code fallback, persistent session, invite only ----------
@@ -212,7 +214,7 @@
     user = session.user;
     if (location.hash && /access_token|error/.test(location.hash)) history.replaceState(null,'',location.pathname+'#/home');
     $('whoEmail').textContent = user.email || ''; $('gate').hidden = true; $('app').hidden = false;
-    if (window.SSApp.sync) await window.SSApp.sync.start(sb);
+    if (window.SSApp.sync) try { await window.SSApp.sync.start(sb); } catch(e){ console.error(e); }
     fillSwitchers(); route();
     if (window.SSPw) SSPw.afterSignIn(sb, user, how);
   }

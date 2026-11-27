@@ -21,7 +21,7 @@
                          {id:uid(), site, at:addDays(d,-1), kind:'gripe', what:'Closing alone on Saturdays is a lot (sample)', anon:true, by:'', status:'open', replies:[]});
       A.save(); }
     return s.voice; }
-  const me = () => A.tier().name;
+  const me = () => A.me();
   const here = list => list.filter(x => x.site === S().site);
 
   function customers(v){

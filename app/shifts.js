@@ -226,7 +226,7 @@
     if (!photo) return toast('A report needs a photo of what wasn\'t done');
     const note = (prompt('What wasn\'t done? (optional)') || '').slice(0,300);
     X().reports = X().reports || [];
-    X().reports.unshift({id:uid(), site:S().site, date:today(), task, by:who || A.tier().name, at:new Date().toISOString(), photo, note, status:'open'});
+    X().reports.unshift({id:uid(), site:S().site, date:today(), task, by:who || A.me(), at:new Date().toISOString(), photo, note, status:'open'});
     if (X().reports.length > 60) X().reports.length = 60; // keeps this browser's storage small until photos move to the database
     A.save(); toast('Report sent to managers'); A.route();
   }
@@ -271,11 +271,12 @@
         h('p',{class:'small muted'},'This week so far: '+hrs(weekHours(S().site, weekStart(today()))[who] || 0)+' h'),
         sch.length ? h('p',{class:'small muted'},'Scheduled today: '+sch.map(s => tShort(s.start)+' to '+tShort(s.end)).join(', ')) : null,
         h('div',{class:'row'},
-          open ? h('button',{class:'btn',type:'button',onclick:()=>{ open.out = new Date().toISOString(); A.save(); toast('Clocked out. Thanks!'); S().kioskWho = null; A.save(); A.route(); }},'Clock out')
+          open ? h('button',{class:'btn',type:'button',onclick:()=>{ if (A.tillHolds && A.tillHolds(who) && !(p && p.tier === 'owner')) return toast('Count the cash drawer out first, then clock out.');
+            open.out = new Date().toISOString(); A.save(); toast('Clocked out. Thanks!'); S().kioskWho = null; A.save(); A.route(); }},'Clock out')
                : h('button',{class:'btn',type:'button',onclick:()=>{ punches().push({id:uid(), who, in:new Date().toISOString(), out:null, brk:0}); A.save(); toast('Clocked in'); A.route(); }},'Clock in'),
           open ? h('button',{class:'btn ghost',type:'button',onclick:()=>{ open.brk = (open.brk||0) + 30; A.save(); toast('30-minute unpaid break added'); A.route(); }},'Add 30 min break') : null,
           h('button',{class:'btn quiet',type:'button',onclick:()=>{ S().kioskWho = null; A.save(); A.route(); }},'Done')));
-      v.append(card, checklistCard(who));
+      v.append(card); if (A.tillCard) v.append(A.tillCard(who)); v.append(checklistCard(who));
       if (A.quickLog) v.append(A.quickLog());
       if (p && MGR.includes(p.tier)) v.append(h('div',{class:'card soft'}, h('b',null,'Manager options'),
         h('div',{class:'row'}, h('button',{class:'btn ghost sm',type:'button',onclick:()=>{ setKiosk(false); S().kioskWho = null; A.save(); A.go('home'); }},'Leave store mode on this device'))));

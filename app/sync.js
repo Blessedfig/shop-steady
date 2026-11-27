@@ -10,9 +10,9 @@
 (function(){
   const A = window.SSApp; if (!A) return;
   const {h, head, toast} = A;
-  const SHARED = ['inv','exp','shifts','voice','people','notes','tax','setup','mods','scans','writeoffs','trips','pay','receiving','costs']; // 'catalog' is shared separately by count.js
+  const SHARED = ['inv','exp','shifts','voice','people','notes','tax','setup','mods','scans','writeoffs','trips','pay','receiving','costs','till','safe']; // 'catalog' is shared separately by count.js
   // Only a store manager or the owner can read or save these (supabase/private-areas.sql): staff phones never get them.
-  const PRIVATE = ['writeoffs','trips','pay','costs'];
+  const PRIVATE = ['writeoffs','trips','pay','costs','safe'];
   const RANK = {staff:1, lead:2, manager:3, owner:4};
   const VKEY = 'shop-steady-sync';
   let sb = null, ver = {}, base = {}, busy = false, again = false, timer = null, statusEl = null, lastErr = '';
@@ -118,15 +118,18 @@
 
   async function start(client){
     sb = client;
-    const r = await sb.rpc('my_role');
-    A.myRole = r.error || !r.data ? 'staff' : r.data;
-    if (r.error) toast('Roles are not set up in the database yet (run supabase/sync.sql).');
-    // this person's own pay rate, if a manager linked their sign-in on the Team screen
-    if (!(A.myRole === 'owner' || A.myRole === 'manager')){ const S = A.state(); PRIVATE.forEach(k => { delete S[k]; delete ver[k]; }); A.save(true); } // nothing private stays on a staff phone
-    try { const p = await sb.rpc('my_pay'); A.myPay = p.error ? null : p.data; } catch(e){ A.myPay = null; }
-    applyRole();
     const who = document.getElementById('whoEmail');
     if (who && !statusEl){ statusEl = h('span',{class:'syncst','aria-live':'polite'},''); who.after(statusEl); }
+    status('Connecting…');
+    let r; try { r = await sb.rpc('my_role'); } catch(e){ r = {error:e}; }
+    A.myRole = r.error || !r.data ? 'staff' : r.data;
+    if (r.error) toast('Could not check your access level yet. Showing staff screens until it connects.');
+    // nothing private stays on a staff phone (only when the database really says staff, not on a network error)
+    if (!r.error && !(A.myRole === 'owner' || A.myRole === 'manager')){ const S = A.state(); PRIVATE.forEach(k => { delete S[k]; delete ver[k]; }); A.save(true); }
+    try { const n = await sb.rpc('my_name'); A.myName = n.error ? null : n.data; } catch(e){ A.myName = null; }
+    // this person's own pay rate, if a manager linked their sign-in on the Team screen
+    try { const p = await sb.rpc('my_pay'); A.myPay = p.error ? null : p.data; } catch(e){ A.myPay = null; }
+    applyRole();
     try { base = await IDB.all(); } catch(e){ base = {}; }
     try { status('Loading…'); await pull(true); await push(); status('Saved'); }
     catch(e){ status(/app_docs|save_doc|schema cache/.test(e.message||'') ? 'Shared saving is not set up yet' : 'Working offline for now', true); }

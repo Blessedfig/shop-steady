@@ -7,10 +7,11 @@
 --   trips     : the mileage log
 --   writeoffs : write-offs and giveaways
 --   costs     : what each item cost the store (from receiving)
+--   safe      : the safe log (deposits, money taken out, safe counts)
 -- my_pay()    : lets any signed-in person read their own pay rate only (matched by their sign-in email).
 
 create or replace function public.private_doc(k text) returns boolean language sql immutable as $$
-  select k in ('pay','trips','writeoffs','costs') $$;
+  select k in ('pay','trips','writeoffs','costs','safe') $$;
 
 drop policy if exists "members read app data" on public.app_docs;
 create policy "members read app data" on public.app_docs for select to authenticated
@@ -43,3 +44,10 @@ language sql stable security definer set search_path = public as $$
   limit 1 $$;
 revoke all on function public.my_pay() from public, anon;
 grant execute on function public.my_pay() to authenticated;
+
+-- my_name(): the signed-in person's name from the access list (or their email), used as the author of posts.
+create or replace function public.my_name() returns text
+language sql stable security definer set search_path = public as $$
+  select coalesce(nullif(name,''), email) from public.desk_members where email = lower(coalesce(auth.jwt() ->> 'email', '')) $$;
+revoke all on function public.my_name() from public, anon;
+grant execute on function public.my_name() to authenticated;
