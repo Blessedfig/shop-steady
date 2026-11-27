@@ -68,7 +68,18 @@
     const st = modState(m); return st.on && st.tiers.includes(S.tier); };
   const listed = v => viewOn(v) && !VIEWS[v].hidden;
 
+  // The first level (Bookseller) gets a simple app: a few big buttons, no side menu, no level switcher.
+  const SIMPLE = [['checklists','✅','Today\'s checklist'],['till','💵','Cash drawer'],['schedule','📅','My schedule and pay'],
+                  ['teamvoice','💬','Message the owner'],['custvoice','🗣️','A customer asked'],['cashtrain','🎓','Cash training']];
+  const simple = () => S.tier === 'staff';
+  function simpleHome(v){
+    const name = (window.SSApp.myName || '').split(/[ @]/)[0];
+    v.append(h('h1',{class:'simplehi'}, name ? 'Hi, '+name : 'Hi!'));
+    v.append(h('div',{class:'bigtiles'}, SIMPLE.filter(([k]) => VIEWS[k] && viewOn(k)).map(([k,ic,t]) => h('a',{class:'tile big',href:'#/'+k}, h('span',{class:'ic','aria-hidden':'true'},ic), h('b',null,t)))));
+    if (VIEWS.kiosk && viewOn('kiosk')) v.append(h('p',{class:'small muted'},'Clock in and out on the store tablet.'));
+  }
   R.home = v => {
+    if (simple()) return simpleHome(v);
     v.append(head(site().name+' · '+btype().name, 'Good to see you', 'Pick what you need. Owners can turn modules on or off for each role under Modules.'));
     const g = h('div',{class:'grid g3'});
     Object.keys(VIEWS).filter(k => k !== 'home' && listed(k)).forEach(k => g.append(h('a',{class:'tile',href:'#/'+k}, h('span',{class:'ic','aria-hidden':'true'},VIEWS[k].ic), h('b',null,VIEWS[k].t))));
@@ -120,7 +131,11 @@
     param = m && m[2] ? decodeURIComponent(m[2]) : '';
     renderNav(current);
     const main = $('main'); main.textContent = '';
-    const view = h('div',{class:'view'}); (R[current] || R.home)(view); main.append(view);
+    document.body.classList.toggle('simple', simple());
+    document.body.classList.toggle('stafflogin', window.SSApp.myRole === 'staff');
+    const view = h('div',{class:'view'});
+    if (simple() && current !== 'home') view.append(h('a',{class:'btn ghost sm backhome',href:'#/home'},'← Home'));
+    (R[current] || R.home)(view); main.append(view);
     window.scrollTo(0,0);
   }
   window.addEventListener('hashchange', () => { if (!$('app').hidden) route(); });
@@ -167,7 +182,9 @@
     actions:[{type:'Action.OpenUrl', title:'Open in the app', url:appUrl(e)}]}}]});
   const chatPayload = e => ({text:'*'+e.title+'*\n'+fmtDate(e.date)+(e.time?' · '+e.time:'')+'\n'+(e.note||'')+'\n<'+appUrl(e)+'|Open in the app>'});
 
-  window.SSApp = {D, h, state:()=>S, save, toast, copy, site, tier, btype, tierName, setupOf, fresh, fmtDate, fmtTime, money, head, download, toIcs, toCsv, gcalUrl, outlookUrl, csvCell,
+  // The person doing something: who tapped in on the store tablet, else the signed-in person's name, else the level.
+  const me = () => (S.kioskWho && Date.now() - S.kioskWho.at < 120000 && S.kioskWho.n) || (window.SSApp && window.SSApp.myName) || tier().name;
+  window.SSApp = {D, h, me, state:()=>S, save, toast, copy, site, tier, btype, tierName, setupOf, fresh, fmtDate, fmtTime, money, head, download, toIcs, toCsv, gcalUrl, outlookUrl, csvCell,
     teamsPayload, chatPayload, R, VIEWS, register, viewOn, route:()=>route(), go, isoDay, addDays, uid, renderNav:()=>renderNav(current), fillSwitchers, param:()=>param, homeHooks, ownerHooks};
 
   // ---------- sign-in: password, emailed code fallback, persistent session, invite only ----------
@@ -212,7 +229,7 @@
     user = session.user;
     if (location.hash && /access_token|error/.test(location.hash)) history.replaceState(null,'',location.pathname+'#/home');
     $('whoEmail').textContent = user.email || ''; $('gate').hidden = true; $('app').hidden = false;
-    if (window.SSApp.sync) await window.SSApp.sync.start(sb);
+    if (window.SSApp.sync) try { await window.SSApp.sync.start(sb); } catch(e){ console.error(e); }
     fillSwitchers(); route();
     if (window.SSPw) SSPw.afterSignIn(sb, user, how);
   }

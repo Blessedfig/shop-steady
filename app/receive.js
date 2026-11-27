@@ -77,7 +77,7 @@
       h('label',{class:'f'},'Expected by (optional)', h('input',{type:'date',name:'eta'})),
       h('button',{class:'btn',type:'submit'},'Start'));
     f.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(f), id = uid();
-      R().unshift({id, site:S().site, ven:String(d.get('ven')).trim(), ref:String(d.get('ref')||'').trim(), eta:String(d.get('eta')||''), at:isoDay(new Date()), status:'ordered', lines:[], charges:[], by:A.tier().name}); A.save(); A.go('shipment/'+id); });
+      R().unshift({id, site:S().site, ven:String(d.get('ven')).trim(), ref:String(d.get('ref')||'').trim(), eta:String(d.get('eta')||''), at:isoDay(new Date()), status:'ordered', lines:[], charges:[], by:A.me()}); A.save(); A.go('shipment/'+id); });
     v.append(f);
     const rows = here().slice(0, 60);
     v.append(h('div',{class:'card'}, h('h2',null,'Shipments'), rows.length ? h('div',{class:'list'}, rows.map(x => { const exp = x.lines.reduce((a,l) => a + (l.qty||0), 0), got = x.lines.reduce((a,l) => a + (l.got||0), 0);
@@ -156,12 +156,12 @@
   }
 
   function finish(x, toExp){
-    x.status = 'done'; x.doneAt = new Date().toISOString(); x.doneBy = A.tier().name;
+    x.status = 'done'; x.doneAt = new Date().toISOString(); x.doneBy = A.me();
     // remember cost and vendor per code for reorders and special-order quotes
     const s = S(); s.costs = s.costs || {};
     x.lines.forEach(l => { if (l.code && l.cost != null) s.costs[norm(l.code)] = {cost:l.cost, ven:x.ven, at:isoDay(new Date())}; });
     if (toExp){ const amt = x.lines.reduce((a,l) => a + (l.qty||l.got||0)*(l.cost||0), 0) + x.charges.reduce((a,c) => a + (c.amount||0), 0);
-      if (amt > 0) (s.exp = s.exp || []).push({id:uid(), site:x.site, date:x.docDate && /^\d{4}-\d{2}-\d{2}$/.test(x.docDate) ? x.docDate : isoDay(new Date()), cat:'Inventory purchases', amt:Math.round(amt*100)/100, payee:x.ven, note:'Shipment'+(x.ref ? ' '+x.ref : '')+' ('+x.lines.length+' lines)', by:A.tier().name, status:'ok'}); }
+      if (amt > 0) (s.exp = s.exp || []).push({id:uid(), site:x.site, date:x.docDate && /^\d{4}-\d{2}-\d{2}$/.test(x.docDate) ? x.docDate : isoDay(new Date()), cat:'Inventory purchases', amt:Math.round(amt*100)/100, payee:x.ven, note:'Shipment'+(x.ref ? ' '+x.ref : '')+' ('+x.lines.length+' lines)', by:A.me(), status:'ok'}); }
   }
   function shopifyFile(x, cat){
     if (!cat || !cat.inv) return toast('Load the Shopify inventory export under Stock count first');

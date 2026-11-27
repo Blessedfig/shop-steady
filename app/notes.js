@@ -27,7 +27,7 @@
     ctx = ctx || {};
     if (A.demo || !A.sb) return {note:tidy(text), missing:[], basic:true, why:'demo'};
     try {
-      const {data, error} = await A.sb.functions.invoke('note-polish', {body:{text, kind:ctx.kind||'update', about:ctx.about||'', when:ctx.when||'', by:ctx.by||A.tier().name, business:A.site().name}});
+      const {data, error} = await A.sb.functions.invoke('note-polish', {body:{text, kind:ctx.kind||'update', about:ctx.about||'', when:ctx.when||'', by:ctx.by||A.me(), business:A.site().name}});
       if (error){ let code = ''; try { code = (await error.context.json()).error; } catch(_){}
         return {note:tidy(text), missing:[], basic:true, why: code === 'not-configured' ? 'nokey' : 'error'}; }
       return data;
@@ -83,12 +83,12 @@
       polishButton(text, () => { const d = new FormData(f); return {kind:d.get('kind'), about:d.get('about'), when:fmtWhen(d.get('when'))}; }),
       h('button',{class:'btn',type:'submit'},'Save note'));
     f.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(f), t = String(d.get('text')).trim(); if (!t) return;
-      N().unshift({id:uid(), site:S().site, at:new Date().toISOString(), when:String(d.get('when')), kind:String(d.get('kind')), about:String(d.get('about')||'').trim(), by:A.tier().name, text:t, original:text.dataset.original && text.dataset.original !== t ? text.dataset.original : ''});
+      N().unshift({id:uid(), site:S().site, at:new Date().toISOString(), when:String(d.get('when')), kind:String(d.get('kind')), about:String(d.get('about')||'').trim(), by:A.me(), text:t, original:text.dataset.original && text.dataset.original !== t ? text.dataset.original : ''});
       if (N().length > 500) N().length = 500;
       A.save(); toast('Note saved'); A.route(); });
     v.append(f);
 
-    const me = A.tier().name;
+    const me = A.me();
     let list = N().filter(x => x.site === S().site && (isMgr() ? true : (x.by === me && !PRIVATE.includes(x.kind))));
     const filt = h('input',{type:'search','aria-label':'Search notes',placeholder:'Search notes or a name'});
     const body = h('div',{class:'list'});
@@ -96,6 +96,7 @@
       body.replaceChildren(...(rows.length ? rows.slice(0,100).map(x => h('div',{class:'item'},
         h('span',{class:'small muted'}, KINDS[x.kind]+(x.about ? ' · '+x.about : '')+' · '+fmtWhen(x.when)+' · by '+x.by),
         h('p',null,x.text),
+        x.by === me && A.delivery ? A.delivery('notes', x) : null,
         x.original ? h('details',{class:'small muted'}, h('summary',null,'Original words'), h('p',null,x.original)) : null,
         h('div',{class:'row'}, h('button',{class:'linkbtn small',type:'button',onclick:()=>A.copy(fmtWhen(x.when)+(x.about ? ' · '+x.about : '')+'\n'+x.text+'\n(Written by '+x.by+')')},'Copy for a report')))) : [h('p',{class:'muted'},'No notes yet.')])); };
     filt.addEventListener('input', draw); draw();

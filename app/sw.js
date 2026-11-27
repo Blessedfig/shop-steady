@@ -1,8 +1,8 @@
 // Service worker for the installed app. Network first (revalidating with the server every time), so staff always get the latest version;
 // the cached copy is used only when the device is offline. Sign-in and data calls (other origins) are never cached.
 // Bump CACHE every release, and list every file the app needs offline in SHELL.
-const CACHE = 'shop-steady-v17';
-const SHELL = ['./', './index.html', './styles.css', './config.js', './shell.js', './data.js', './inventory.js', './setup.js', './shifts.js', './voice.js', './count.js', './people.js', './catalog.js', './notes.js', './taxlog.js', './receive.js', './sync.js', './sw-register.js',
+const CACHE = 'shop-steady-v21';
+const SHELL = ['./', './index.html', './styles.css', './config.js', './shell.js', './data.js', './inventory.js', './setup.js', './shifts.js', './voice.js', './count.js', './people.js', './catalog.js', './notes.js', './taxlog.js', './receive.js', './till.js', './inbox.js', './sync.js', './sw-register.js',
   './lib/pw.js', './lib/idle.js', './vendor/supabase-js-2.118.0.js', './manifest.webmanifest', './icons/icon-192.png'];
 
 self.addEventListener('install', e => {

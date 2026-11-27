@@ -21,7 +21,7 @@
                          {id:uid(), site, at:addDays(d,-1), kind:'gripe', what:'Closing alone on Saturdays is a lot (sample)', anon:true, by:'', status:'open', replies:[]});
       A.save(); }
     return s.voice; }
-  const me = () => A.tier().name;
+  const me = () => A.me();
   const here = list => list.filter(x => x.site === S().site);
 
   function customers(v){
@@ -63,7 +63,7 @@
     v.append(ci);
     const list = here(V().staff).filter(x => isMgr() || x.by === me() || x.anon).sort((a,b) => b.at.localeCompare(a.at));
     v.append(h('div',{class:'card'}, h('h2',null, isMgr() ? 'Everything from the team' : 'Posts and answers'), list.length ? h('div',{class:'list'}, list.map(x => {
-      const it = h('div',{class:'item'}, h('b',null,x.what), h('span',{class:'small muted'}, STAFF[x.kind]+' · '+(x.anon ? 'Anonymous' : x.by)+' · '+A.fmtDate(x.at)+' · ', h('span',{class:'chip '+(x.status==='open'?'amber':'calm')}, x.status==='open'?'Open':'Answered')));
+      const it = h('div',{class:'item'}, h('b',null,x.what), h('span',{class:'small muted'}, STAFF[x.kind]+' · '+(x.anon ? 'Anonymous' : x.by)+' · '+A.fmtDate(x.at)+' · ', h('span',{class:'chip '+(x.status==='open'?'amber':'calm')}, x.status==='open'?'Open':'Answered')), !isMgr() && x.by === me() && A.delivery ? A.delivery('voice', x) : null);
       x.replies.forEach(r => it.append(h('div',{class:'small'}, h('b',null,r.by+': '), r.text)));
       if (isMgr()){ const rf = h('form',{class:'row'}, h('input',{type:'text',name:'r',maxlength:'300','aria-label':'Reply',placeholder:'Reply'}), h('button',{class:'btn sm',type:'submit'},'Reply'));
         rf.addEventListener('submit', e => { e.preventDefault(); const t = String(new FormData(rf).get('r')||'').trim(); if (!t) return; x.replies.push({by:me(), text:t}); x.status = 'answered'; A.save(); A.route(); }); it.append(rf); }

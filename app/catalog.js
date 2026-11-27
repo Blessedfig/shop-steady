@@ -371,5 +371,5 @@
   }
 
   A.register({id:'catalog', name:'Title search and catalogs', what:'One search across every vendor’s title list with stock, cost, margin and special-order price; managers load ONIX feeds, CSV title lists, Faire exports and stock files.', tiers:['staff','lead','manager','owner'],
-    views:{titles:{t:'Title search', ic:'🔎', render:titlesView}, catalogs:{t:'Catalog imports', ic:'📥', render:importView}}});
+    views:{titles:{t:'Title search', ic:'🔎', render:titlesView}, catalogs:{t:'Catalog imports', ic:'📥', render:importView, min:'manager'}}});
 })();

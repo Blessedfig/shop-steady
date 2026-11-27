@@ -39,7 +39,7 @@
     if (!t.places.length) t.places = [{n:'Post office', mi:2}, {n:'Bank', mi:2}, {n:'Office supply store', mi:6}];
     s.exp = s.exp || []; return t; }
   const here = list => list.filter(x => x.site === S().site);
-  const who = () => S().kioskWho ? S().kioskWho.n : A.tier().name;
+  const who = () => A.me();
   // In store mode the person who tapped in counts, not the device's view: their entries wait for a manager unless they are one.
   const actorTier = () => { const k = S().kioskWho; if (!k) return S().tier; const sh = S().shifts || {}, team = (sh.team && sh.team[S().site]) || []; const p = team.find(x => x.n === k.n); return p ? p.tier : 'staff'; };
   const status = () => MGR.includes(actorTier()) ? 'ok' : 'pending';

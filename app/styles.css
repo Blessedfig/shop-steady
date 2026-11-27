@@ -266,3 +266,15 @@ html{font-size:106.25%}
   .btn:not(.sm):not(.ghost):not(.quiet){min-height:56px;font-size:1.05rem}
   .card > .btn:last-child:not(.sm),form > .btn:last-child:not(.sm){width:100%}
 }
+
+/* Simple app for the first level (Bookseller): big buttons, no side menu */
+body.simple nav.side{display:none}
+body.simple .shell{grid-template-columns:1fr}
+body.stafflogin .switch:has(#tierSel){display:none}
+.simplehi{font-family:var(--display);font-size:1.8rem;margin:.5rem 0 1rem}
+.bigtiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.9rem;margin-bottom:1rem}
+@media (min-width:720px){.bigtiles{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.tile.big{min-height:132px;place-content:center;justify-items:center;text-align:center;padding:1.1rem .8rem}
+.tile.big .ic{font-size:2.2rem}
+.tile.big b{font-size:1.12rem;line-height:1.25}
+.backhome{margin-bottom:.8rem}

@@ -63,7 +63,7 @@
   function SC(){ const s = S(); s.scans = s.scans || {round:'', devices:{}}; s.scans.devices = s.scans.devices || {}; return s.scans; }
   function syncRound(){ const c = C(), sc = SC(); if (shared() && (c.round || '') !== (sc.round || '')){ c.raw = {}; c.merged = []; c.last = null; c.round = sc.round || ''; delete sc.devices[DEV]; } }
   function publish(){ if (!shared()) return; const c = C(), sc = SC();
-    sc.devices[DEV] = {who:(S().kioskWho ? S().kioskWho.n : A.tier().name), area:c.area || '', raw:Object.assign({}, c.raw), at:new Date().toISOString()}; }
+    sc.devices[DEV] = {who:A.me(), area:c.area || '', raw:Object.assign({}, c.raw), at:new Date().toISOString()}; }
   function allRaw(){ if (!shared()) return C().raw; const tot = {};
     Object.values(SC().devices).forEach(d => Object.entries(d.raw || {}).forEach(([k,n]) => tot[k] = (tot[k]||0) + n)); return tot; }
   // counts per Shopify product, from raw scanned codes ("KEY:" means picked by name, for items with no barcode)
@@ -139,7 +139,7 @@
   // Each phone scans its own section, then taps "Send my scans" (a small CSV). The device with the Shopify files
   // adds every phone's file. Each file carries an id, so adding the same file twice is caught.
   function myScansCsv(){ const c = C(); c.dev = c.dev || Math.random().toString(36).slice(2,8);
-    const id = c.dev+'-'+Date.now(), who = A.tier().name + (c.area ? ' · '+c.area : '');
+    const id = c.dev+'-'+Date.now(), who = A.me() + (c.area ? ' · '+c.area : '');
     return '# shop-steady-scans,'+id+','+who.replace(/[,\n]/g,' ')+'\r\nBarcode,Copies\r\n'+Object.entries(c.raw).map(([k,n]) => k+','+n).join('\r\n')+'\r\n'; }
   function addScans(text, name){
     const lines = text.replace(/^﻿/,'').split(/\r?\n/), c = C();

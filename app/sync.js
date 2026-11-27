@@ -10,9 +10,9 @@
 (function(){
   const A = window.SSApp; if (!A) return;
   const {h, head, toast} = A;
-  const SHARED = ['inv','exp','shifts','voice','people','notes','tax','setup','mods','scans','writeoffs','trips','pay','receiving','costs']; // 'catalog' is shared separately by count.js
+  const SHARED = ['inv','exp','shifts','voice','people','notes','tax','setup','mods','scans','writeoffs','trips','pay','receiving','costs','till','safe']; // 'catalog' is shared separately by count.js
   // Only a store manager or the owner can read or save these (supabase/private-areas.sql): staff phones never get them.
-  const PRIVATE = ['writeoffs','trips','pay','costs'];
+  const PRIVATE = ['writeoffs','trips','pay','costs','safe'];
   const RANK = {staff:1, lead:2, manager:3, owner:4};
   const VKEY = 'shop-steady-sync';
   let sb = null, ver = {}, base = {}, busy = false, again = false, timer = null, statusEl = null, lastErr = '';
@@ -82,6 +82,7 @@
   }
   async function push(){
     if (busy){ again = true; return; } busy = true;
+    let sentAny = false;
     try {
       const S = A.state();
       for (const k of SHARED){
@@ -93,14 +94,14 @@
           const snap = clone(S[k]);
           const {data:nv, error} = await sb.rpc('save_doc', {p_key:k, p_data:snap, p_base:ver[k] || 0});
           if (error) throw error;
-          if (nv > 0){ ver[k] = nv; base[k] = snap; IDB.put(k, snap); break; }
+          if (nv > 0){ ver[k] = nv; base[k] = snap; IDB.put(k, snap); sentAny = true; break; }
           // someone else saved first: get theirs, merge, try again
           const {data:row, error:e2} = await sb.from('app_docs').select('data,version').eq('key', k).single();
           if (e2) throw e2;
           S[k] = merge(base[k], S[k], row.data); base[k] = clone(row.data); ver[k] = row.version; IDB.put(k, base[k]);
         }
       }
-      saveVer(); A.save(true); status('Saved');
+      saveVer(); A.save(true); status('Saved'); if (sentAny) refresh(); // shows the ✓ Sent marks
     } catch(e){ status(navigator.onLine === false ? 'Offline: changes are kept here and sync later' : 'Not synced yet: '+(e.message||'error'), true); }
     finally { busy = false; if (again){ again = false; schedule(); } }
   }
@@ -118,15 +119,18 @@
 
   async function start(client){
     sb = client;
-    const r = await sb.rpc('my_role');
-    A.myRole = r.error || !r.data ? 'staff' : r.data;
-    if (r.error) toast('Roles are not set up in the database yet (run supabase/sync.sql).');
-    // this person's own pay rate, if a manager linked their sign-in on the Team screen
-    if (!(A.myRole === 'owner' || A.myRole === 'manager')){ const S = A.state(); PRIVATE.forEach(k => { delete S[k]; delete ver[k]; }); A.save(true); } // nothing private stays on a staff phone
-    try { const p = await sb.rpc('my_pay'); A.myPay = p.error ? null : p.data; } catch(e){ A.myPay = null; }
-    applyRole();
     const who = document.getElementById('whoEmail');
     if (who && !statusEl){ statusEl = h('span',{class:'syncst','aria-live':'polite'},''); who.after(statusEl); }
+    status('Connecting…');
+    let r; try { r = await sb.rpc('my_role'); } catch(e){ r = {error:e}; }
+    A.myRole = r.error || !r.data ? 'staff' : r.data;
+    if (r.error) toast('Could not check your access level yet. Showing staff screens until it connects.');
+    // nothing private stays on a staff phone (only when the database really says staff, not on a network error)
+    if (!r.error && !(A.myRole === 'owner' || A.myRole === 'manager')){ const S = A.state(); PRIVATE.forEach(k => { delete S[k]; delete ver[k]; }); A.save(true); }
+    try { const n = await sb.rpc('my_name'); A.myName = n.error ? null : n.data; } catch(e){ A.myName = null; }
+    // this person's own pay rate, if a manager linked their sign-in on the Team screen
+    try { const p = await sb.rpc('my_pay'); A.myPay = p.error ? null : p.data; } catch(e){ A.myPay = null; }
+    applyRole();
     try { base = await IDB.all(); } catch(e){ base = {}; }
     try { status('Loading…'); await pull(true); await push(); status('Saved'); }
     catch(e){ status(/app_docs|save_doc|schema cache/.test(e.message||'') ? 'Shared saving is not set up yet' : 'Working offline for now', true); }
@@ -135,7 +139,12 @@
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pull().then(() => push()).catch(() => {}); });
     window.addEventListener('online', () => push());
   }
-  A.sync = {start, merge, mergeFirst, pull:() => pull(), push};
+  // is this record (by id) on the server's copy yet? Used for the ✓ Sent marks.
+  const seenCache = {};
+  function onServer(k, id){ const b = base[k]; if (!b) return false;
+    if (!seenCache[k] || seenCache[k].v !== ver[k]) seenCache[k] = {v:ver[k], s:JSON.stringify(b)};
+    return seenCache[k].s.includes('"id":"'+id+'"'); }
+  A.sync = {start, merge, mergeFirst, pull:() => pull(), push, onServer};
 
   // ---------- owner: Team logins ----------
   const NAMES = () => ({staff:A.tierName('staff'), lead:A.tierName('lead'), manager:A.tierName('manager'), owner:A.tierName('owner')});
