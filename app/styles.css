@@ -238,3 +238,5 @@ textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:.6re
 .camview{width:100%;max-width:420px;border-radius:12px;background:#000}
 .checkline{display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap}
 img.proof{max-width:260px;width:100%;border-radius:12px;border:1px solid var(--line)}
+.card.inset{background:var(--sky-soft);box-shadow:none;border:1px dashed var(--line-strong);margin-top:.5rem}
+.polish{display:grid;gap:.4rem}
