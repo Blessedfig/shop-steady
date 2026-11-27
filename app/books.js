@@ -62,9 +62,9 @@
   };
   const rule = c => RULES[c] || RULES.Other;
   const HOW = {full:'Counts this year', half:'Half counts (meals)', cogs:'Through cost of goods sold', asset:'Equipment: over years', none:'Not deductible', check:'Counts, check it', custom:'My own amount'};
-  const LINES = {'8':'Advertising','9':'Car and truck','10':'Commissions and fees','11':'Contract labor','13':'Depreciation and Section 179','15':'Insurance','16a':'Mortgage interest','17':'Legal and professional',
+  const LINES = {'8':'Advertising','9':'Car and truck','10':'Commissions and fees','11':'Contract labor','13':'Depreciation and Section 179','15':'Insurance','16a':'Mortgage interest','16b':'Other interest (loans, Shopify Capital fee)','17':'Legal and professional',
     '18':'Office expense','20b':'Rent (other business property)','21':'Repairs and maintenance','22':'Supplies','23':'Taxes and licenses','24a':'Travel','24b':'Meals (50%)','25':'Utilities','26':'Wages','27a':'Other expenses','30':'Home office'};
-  const LINE_ORDER = ['8','9','10','11','13','15','16a','17','18','20b','21','22','23','24a','24b','25','26','27a','30'];
+  const LINE_ORDER = ['8','9','10','11','13','15','16a','16b','17','18','20b','21','22','23','24a','24b','25','26','27a','30'];
   const usd = n => '$' + Math.round(n).toLocaleString('en-US');
   const BUILDING = ['Rent or mortgage','Mortgage interest','Property taxes','Utilities','Phone and internet','Insurance','Building repairs and upkeep','Repairs','Cleaning and janitorial'];
 
@@ -113,6 +113,24 @@
       return out; }
     out.fed = out.wi = regular(basis, a, y); return out; }
 
+  // ---------- loans and advances ----------
+  const LOAN_KINDS = {capital:'Shopify Capital or another advance with one fixed fee', loan:'Bank or SBA loan (interest rate)', line:'Line of credit', card:'Business credit card balance', owner:'Your own money put into the business'};
+  // Splits every payment into fee or interest (deductible when paid) and principal (not deductible).
+  function loanMath(loan, pays){
+    const ps = pays.filter(p => p.loan_id === loan.id).sort((a,b) => a.paid_on.localeCompare(b.paid_on)), amt = +loan.amount || 0, fee = +loan.fee || 0;
+    let bal = amt, feeLeft = fee, last = loan.started, paidSoFar = 0; const rows = [];
+    ps.forEach(p => { const pay = +p.amount || 0; let int;
+      if (loan.kind === 'owner') int = 0;
+      else if (p.interest != null && p.interest !== '') int = Math.min(pay, +p.interest);
+      else if (loan.kind === 'capital'){ paidSoFar += pay; int = paidSoFar >= amt + fee - 0.005 ? feeLeft : Math.min(feeLeft, amt + fee ? pay * fee / (amt + fee) : 0); }
+      else { const days = Math.max(0, (new Date(p.paid_on) - new Date(last)) / 864e5); int = Math.min(pay, Math.max(0, bal) * (+loan.rate || 0) / 100 * days / 365); }
+      int = Math.round(int * 100) / 100; if (loan.kind === 'capital') feeLeft = Math.max(0, Math.round((feeLeft - int) * 100) / 100);
+      const prin = Math.round((pay - int) * 100) / 100; bal = Math.round((bal - prin) * 100) / 100; last = p.paid_on;
+      rows.push({p, pay, int, prin, bal, est:p.interest == null || p.interest === ''}); });
+    const owed = loan.kind === 'capital' ? Math.max(0, bal + feeLeft) : Math.max(0, bal);
+    const year = y => { const r = rows.filter(x => x.p.paid_on.startsWith(String(y))); return {paid:r.reduce((a,x) => a + x.pay, 0), int:r.reduce((a,x) => a + x.int, 0), prin:r.reduce((a,x) => a + x.prin, 0), n:r.length}; };
+    return {rows, owed, principalLeft:Math.max(0, bal), feeLeft, year, ded:loan.kind !== 'owner'}; }
+
   // ---------- storage: owner-only tables, or this device in the demo ----------
   const L = () => { const s = S(); s.booksLocal = s.booksLocal || {years:{}, assets:[], inv:[]}; return s.booksLocal; };
   const DB = {
@@ -132,6 +150,17 @@
       const r = await A.sb.rpc('books_snapshot', {p_note:null}); if (r.error) throw r.error; return r.data; },
     async addCount(as_of, value, note){ if (local()){ L().inv.push({id:uid(), as_of, kind:'count', units:0, value_cost:value, no_cost:0, note}); A.save(true); return; }
       const r = await A.sb.from('books_inventory').insert({as_of, kind:'count', value_cost:value, note}); if (r.error) throw r.error; },
+    async loans(){ if (local()) return {loans:L().loans || [], pays:L().pays || []};
+      const a = await A.sb.from('books_loans').select('*').order('started'), b = await A.sb.from('books_loan_payments').select('*').order('paid_on');
+      if (a.error) throw a.error; if (b.error) throw b.error; return {loans:a.data || [], pays:b.data || []}; },
+    async saveLoan(x){ if (local()){ const l = L().loans = L().loans || [], i = l.findIndex(o => o.id === x.id); if (i < 0) l.push(Object.assign({id:uid()}, x)); else l[i] = x; A.save(true); return; }
+      const r = x.id ? await A.sb.from('books_loans').update(x).eq('id', x.id) : await A.sb.from('books_loans').insert(x); if (r.error) throw r.error; },
+    async delLoan(id){ if (local()){ L().loans = (L().loans || []).filter(o => o.id !== id); L().pays = (L().pays || []).filter(p => p.loan_id !== id); A.save(true); return; }
+      const r = await A.sb.from('books_loans').delete().eq('id', id); if (r.error) throw r.error; },
+    async addPays(rows){ if (local()){ L().pays = (L().pays || []).concat(rows.map(r => Object.assign({id:uid()}, r))); A.save(true); return; }
+      const r = await A.sb.from('books_loan_payments').insert(rows); if (r.error) throw r.error; },
+    async delPay(id){ if (local()){ L().pays = (L().pays || []).filter(p => p.id !== id); A.save(true); return; }
+      const r = await A.sb.from('books_loan_payments').delete().eq('id', id); if (r.error) throw r.error; },
     async sales(y){ if (local()) return [];
       const r = await A.sb.rpc('books_sales_year', {p_year:y}); if (r.error) throw r.error; return r.data || []; }
   };
@@ -159,6 +188,8 @@
   async function compute(y, site){
     site = site || siteSel(); const inSite = x => site === 'all' || x.site === site;
     const Y = await DB.year(y), assets = await DB.assets(), inv = await DB.inv();
+    let LN = {loans:[], pays:[]}, loanErr = ''; try { LN = await DB.loans(); } catch(e){ loanErr = e.message || String(e); }
+    const loans = LN.loans.map(l => Object.assign({l}, loanMath(l, LN.pays)));
     let sales = []; let salesErr = ''; try { sales = await DB.sales(y); } catch(e){ salesErr = e.message || String(e); }
     const ys = String(y), rate = Y.rate != null ? +Y.rate : 0.28;
     const exp = (S().exp || []).filter(x => x.date && x.date.startsWith(ys) && counted(x) && inSite(x));
@@ -170,7 +201,8 @@
       const spent = exp.filter(x => x.date.startsWith(k)), invBuy = spent.filter(x => rule(x.cat).how === 'cogs').reduce((a,x) => a + +x.amt, 0);
       const draws = spent.filter(x => x.cat === 'Owner draw or personal').reduce((a,x) => a + +x.amt, 0);
       const other = spent.reduce((a,x) => a + +x.amt, 0) - invBuy - draws;
-      return {k, n, synced:s ? +s.net : null, partial:s && k === firstM && s.first_day > k+'-01' ? s.first_day : null, typed:typed != null ? +typed : null,
+      const loanPaid = LN.pays.filter(p => p.paid_on.startsWith(k) && (LN.loans.find(l => l.id === p.loan_id) || {}).kind !== 'owner').reduce((a,p) => a + +p.amount, 0);
+      return {k, n, loanPaid, synced:s ? +s.net : null, partial:s && k === firstM && s.first_day > k+'-01' ? s.first_day : null, typed:typed != null ? +typed : null,
         sales:typed != null ? +typed : s ? +s.net : null, cost:s ? +s.cost : 0, netWithCost:s ? +s.net_with_cost : 0, noCost:s ? s.lines_no_cost : 0, invBuy, other, draws}; });
     const salesTotal = months.reduce((a,m) => a + (m.sales || 0), 0), monthsMissing = months.filter(m => m.sales == null && m.k <= isoDay(new Date()).slice(0,7));
     // inventory: Dec 31 of last year and this year (a count beats the automatic Shopify value)
@@ -198,12 +230,14 @@
     // Schedule C lines
     const lines = {}; const add = (l, v) => { if (v) lines[l] = (lines[l] || 0) + v; };
     rows.forEach(r => { if (r.ded && r.line !== 'Personal' && r.line !== '—') add(r.line, r.ded); });
-    add('8', promo); add('9', mile); add('13', depFed); add('22', demin); add('30', office);
+    const loanInt = loans.filter(x => x.ded).reduce((a,x) => a + x.year(y).int, 0), loanPrin = loans.filter(x => x.ded).reduce((a,x) => a + x.year(y).prin, 0);
+    const capitalIn = loans.filter(x => x.l.started.startsWith(ys)).reduce((a,x) => a + +x.l.amount, 0);
+    add('16b', loanInt); add('8', promo); add('9', mile); add('13', depFed); add('22', demin); add('30', office);
     const deductions = Object.values(lines).reduce((a,v) => a + v, 0);
     const profit = salesTotal - cogs - deductions;
     const vehicleBoth = miles > 0 && rows.some(r => r.x.cat === 'Vehicle (actual costs)' && r.ded > 0);
     return {y, Y, rate, exp, rows, months, salesTotal, monthsMissing, salesErr, shopSynced, beg, end, purchases, promo, charity, loss, cogs, cogsSrc, shopCogs, shopCovered,
-      assets, dep, depFed, depWi, used179, demin, miles, mile, sq, office, lines, deductions, profit, wo, inv, vehicleBoth}; }
+      loans, loanInt, loanPrin, capitalIn, loanErr, assets, dep, depFed, depWi, used179, demin, miles, mile, sq, office, lines, deductions, profit, wo, inv, vehicleBoth}; }
 
   // ---------- small helpers ----------
   const pct = (a, b) => b ? Math.round(1000*a/b)/10+'%' : '—';
@@ -217,7 +251,7 @@
       h('label',{class:'f'},'Tax year', h('select',{onchange:e=>{ S().booksYear = +e.target.value; A.save(true); A.route(); }}, years.map(y => h('option',{value:String(y),selected:y===curYear()},String(y))))),
       h('label',{class:'f'},'Location', h('select',{onchange:e=>{ S().booksSite = e.target.value; A.save(true); A.route(); }},
         h('option',{value:'all',selected:siteSel()==='all'},'All locations'), A.D.SITES.map(s => h('option',{value:s.id,selected:siteSel()===s.id}, A.setupOf(s.id).name)))),
-      h('nav',{class:'row small'}, h('a',{href:'#/books'},'Tax year'), h('a',{href:'#/purchases'},'Each purchase'), h('a',{href:'#/equipment'},'Equipment'), h('a',{href:'#/taxsum'},'Tax records')));
+      h('nav',{class:'row small'}, h('a',{href:'#/books'},'Tax year'), h('a',{href:'#/purchases'},'Each purchase'), h('a',{href:'#/equipment'},'Equipment'), h('a',{href:'#/loans'},'Loans and capital'), h('a',{href:'#/taxsum'},'Tax records')));
   }
   async function guarded(v, title, lede, body){
     v.append(head('Owner only', title, lede));
@@ -246,16 +280,16 @@
     const ys = String(c.y), rows = c.months.map(m => {
       const inp = h('input',{type:'number',step:'0.01',min:'0','aria-label':'Sales typed for '+m.n,value:m.typed != null ? String(m.typed) : '',placeholder:m.synced != null ? m.synced.toFixed(2) : '',style:'width:6.5rem;min-width:6.5rem',
         onchange:async e=>{ const v = e.target.value; await saveY(c, Y => { Y.salesTyped = Y.salesTyped || {}; if (v === '') delete Y.salesTyped[m.k]; else Y.salesTyped[m.k] = +v; }); }});
-      const net = m.sales == null ? null : m.sales - m.invBuy - m.other;
+      const net = m.sales == null ? null : m.sales - m.invBuy - m.other - m.loanPaid;
       return h('tr',null, h('td',null, m.n), h('td',null, m.synced != null ? money(m.synced) : '—', m.partial ? h('div',{class:'small muted'},'from '+A.fmtDate(m.partial)) : null), h('td',null, inp),
-        h('td',null, money(m.invBuy)), h('td',null, money(m.other)), h('td',null, net == null ? '—' : h('b',null, money(net)))); });
+        h('td',null, money(m.invBuy)), h('td',null, money(m.other)), h('td',null, money(m.loanPaid)), h('td',null, net == null ? '—' : h('b',null, money(net)))); });
     const fi = h('input',{type:'file',accept:'.csv,text/csv','aria-label':'Shopify sales report CSV'});
     fi.addEventListener('change', async () => { const f = fi.files[0]; if (!f) return;
       try { const got = shopifyMonths(await f.text(), ys); const n = Object.keys(got).length; if (!n) throw new Error('No '+ys+' months with a Net sales column found in that file.');
         await saveY(c, Y => { Y.salesTyped = Object.assign(Y.salesTyped || {}, got); }); toast(n+' months imported'); } catch(e){ toast(e.message); } });
     box.append(card('Sales by month (from your POS)',
       h('p',{class:'small muted'},'Synced: Shopify sales after discounts, before sales tax, since the sync started. Typed: your own number for a month, which wins. For months before the sync, or to match Shopify exactly with returns, use Shopify Analytics > Reports > "Sales over time" by month, export it, and import it here.'),
-      tbl(['Month','Synced','Typed (wins)','Stock bought','Other costs','Cash left'], rows),
+      tbl(['Month','Synced','Typed (wins)','Stock bought','Other costs','Loan payments','Cash left'], rows),
       h('div',{class:'row'}, h('label',{class:'f'},'Import Shopify "Sales over time" (.csv)', fi)),
       h('p',{class:'small muted'},'Sales tax you collect is not your income: Shopify keeps it out of these numbers, and you pay it to the Wisconsin Department of Revenue. Shipping you charge customers is income; add it if it is not in your Net sales.')));
   }
@@ -308,6 +342,7 @@
     box.append(card('Write-offs by tax line (Schedule C)',
       rows.length ? tbl(['Line','What','Counts','Saves about'], rows.concat([h('tr',null, h('td',null,''), h('td',null,h('b',null,'Total')), h('td',null,h('b',null,money(c.deductions))), h('td',null,h('b',null,money(c.deductions*c.rate))))])) : h('p',{class:'muted'},'Nothing logged for '+c.y+' yet.'),
       h('ul',{class:'small muted'},
+        c.loanInt ? h('li',null,'Line 16b: '+money(c.loanInt)+' of loan interest and Shopify Capital fees paid this year. The '+money(c.loanPrin)+' of principal paid back does not count. ', h('a',{href:'#/loans'},'Loans')) : null,
         c.mile ? h('li',null,'Line 9 includes '+c.miles.toFixed(1)+' business miles at '+(yr(c.y).mile*100).toFixed(1)+'¢ (IRS rate for '+c.y+').') : null,
         c.office ? h('li',null,'Line 30: home office, simplified method, '+Math.min(c.sq,300)+' sq ft × $5.') : null,
         c.promo ? h('li',null,'Line 8 includes '+money(c.promo)+' of stock given away to promote the store (at cost).') : null,
@@ -328,16 +363,16 @@
         h('li',null,'If part of the building is your home or a separate rental (like upstairs rooms), split utilities and upkeep by the share each part uses, or pick that location above.'))));
   }
   function burn(box, c){
-    const now = isoDay(new Date()).slice(0,7), done = c.months.filter(m => m.k < now && (m.sales != null || m.invBuy || m.other)).slice(-3);
+    const now = isoDay(new Date()).slice(0,7), done = c.months.filter(m => m.k < now && (m.sales != null || m.invBuy || m.other || m.loanPaid)).slice(-3);
     if (!done.length){ box.append(card('Monthly burn rate', h('p',{class:'muted'},'Once a full month of '+c.y+' has sales and expenses, the burn rate shows here.'))); return; }
     const avg = f => done.reduce((a,m) => a + f(m), 0) / done.length;
-    const sales = avg(m => m.sales || 0), stock = avg(m => m.invBuy), other = avg(m => m.other), draws = avg(m => m.draws);
+    const sales = avg(m => m.sales || 0), stock = avg(m => m.invBuy), other = avg(m => m.other), draws = avg(m => m.draws), debt = avg(m => m.loanPaid);
     const margin = c.shopCovered ? (c.shopCovered - c.shopCogs) / c.shopCovered : null, fixed = other;
-    const left = sales - stock - other - draws;
+    const left = sales - stock - other - draws - debt;
     const cashIn = c.Y.cash != null ? +c.Y.cash : null;
     box.append(card('Monthly burn rate',
       h('p',{class:'small muted'},'Average of '+done.map(m => m.n).join(', ')+'.'),
-      h('div',{class:'grid g3'}, stat(money(other), 'Running costs per month (rent, utilities, pay, everything but stock)'), stat(money(stock), 'Stock bought per month'), stat(money(sales), 'Sales per month'),
+      h('div',{class:'grid g3'}, stat(money(other), 'Running costs per month (rent, utilities, pay, everything but stock)'), stat(money(stock), 'Stock bought per month'), debt ? stat(money(debt), 'Loan and Shopify Capital payments per month') : null, stat(money(sales), 'Sales per month'),
         stat(money(left), 'Cash left per month'+(draws ? ' after '+money(draws)+' owner draws' : ''), left >= 0 ? 'good' : 'warnc'),
         margin != null ? stat(money(fixed / Math.max(margin, 0.01)), 'Sales needed to break even (at '+pct(margin,1)+' margin)') : null,
         cashIn != null && left < 0 ? stat((cashIn / -left).toFixed(1)+' months', 'Until '+money(cashIn)+' runs out at this rate', 'warnc') : null),
@@ -375,6 +410,8 @@
       ['Cost of goods sold','41',c.end ? c.end.v.toFixed(2) : '','Inventory at end: '+(c.end ? c.end.src : 'missing')],
       ['Cost of goods sold','42',c.cogs.toFixed(2), ({books:'Start + purchases - end', shopify:'Estimate from Shopify item costs', purchases:'Purchases only (inventory values missing)'})[c.cogsSrc]],
       ...LINE_ORDER.filter(l => c.lines[l]).map(l => ['Expenses', l, c.lines[l].toFixed(2), LINES[l]]),
+      ['Loans','16b',c.loanInt.toFixed(2),'Interest and advance fees paid (principal paid back: '+c.loanPrin.toFixed(2)+', not deductible)'],
+      ['Loans','',c.capitalIn.toFixed(2),'New loans, advances and owner money in this year (not income)'],
       ['Expenses','28',c.deductions.toFixed(2),'Total expenses'],
       ['Profit','31',c.profit.toFixed(2),'Estimate'],
       ['Personal return','Sch. A',c.charity.toFixed(2)+'', 'Stock donated to charities at cost'],
@@ -454,11 +491,69 @@
       h('p',{class:'small muted'},'Regular depreciation uses the half-year convention (the building uses mid-month). If more than 40% of a year\'s equipment went into service in Oct to Dec, a different rule (mid-quarter) applies; your accountant will adjust.')));
   }); }
 
+  // ---------- Loans and capital ----------
+  async function loansView(v){ await guarded(v, 'Loans, Shopify Capital and money put in', 'What you borrowed, what you have paid back, and which part of each payment is a write-off. The fee or interest counts as you pay it; paying back what you borrowed does not.', async (box, c) => {
+    if (c.loanErr) box.append(card('Loans are not set up yet', h('p',null, c.loanErr), h('p',{class:'small'},'Run supabase/books.sql again in the Supabase SQL editor.')));
+    const y = c.y;
+    box.append(h('div',{class:'grid g3'}, stat(money(c.loanInt), 'Fees and interest paid in '+y+' (write-off)', 'good'), stat(money(c.loanInt * c.rate), 'Tax that saves, about'),
+      stat(money(c.loanPrin), 'Principal paid back (not a write-off)'), stat(money(c.loans.filter(x => x.l.kind !== 'owner').reduce((a,x) => a + x.owed, 0)), 'Still owed, all loans'), stat(money(c.capitalIn), 'New money in during '+y+' (not income)')));
+    c.loans.forEach(x => { const l = x.l, yy = x.year(y), kindCap = l.kind === 'capital';
+      const pf = h('form',{class:'row'}, h('label',{class:'f'},'Paid on', h('input',{type:'date',name:'d',required:true,value:isoDay(new Date())})),
+        h('label',{class:'f'},'Amount ($)', h('input',{type:'number',name:'a',step:'0.01',min:'0',required:true})),
+        l.kind === 'owner' ? null : h('label',{class:'f'},'Fee or interest part ($, blank = work it out)', h('input',{type:'number',name:'i',step:'0.01',min:'0'})),
+        h('button',{class:'btn sm',type:'submit'},'Add payment'));
+      pf.addEventListener('submit', async e => { e.preventDefault(); const d = new FormData(pf), i = d.get('i');
+        try { await DB.addPays([{loan_id:l.id, paid_on:String(d.get('d')), amount:+d.get('a'), interest:i == null || i === '' ? null : +i}]); toast('Payment added'); A.route(); } catch(err){ toast(err.message); } });
+      const fi = h('input',{type:'file',accept:'.csv,text/csv','aria-label':'Payments file for '+l.lender});
+      fi.addEventListener('change', async () => { const f = fi.files[0]; if (!f) return;
+        try { const rows = payCsv(await f.text()); if (!rows.length) throw new Error('No rows with a date and an amount found.'); await DB.addPays(rows.map(r => Object.assign({loan_id:l.id}, r))); toast(rows.length+' payments added'); A.route(); } catch(err){ toast(err.message); } });
+      const list = x.rows.slice().reverse().slice(0, 60).map(r => h('tr',null, h('td',null, A.fmtDate(r.p.paid_on)), h('td',null, money(r.pay)), h('td',null, money(r.int)+(r.est && l.kind !== 'owner' ? ' (est.)' : '')), h('td',null, money(r.prin)),
+        h('td',null, h('button',{class:'btn quiet sm',type:'button',onclick:async()=>{ await DB.delPay(r.p.id); A.route(); }},'Remove'))));
+      box.append(card(l.lender+' · '+LOAN_KINDS[l.kind],
+        h('p',{class:'small muted'}, 'Started '+A.fmtDate(l.started)+' · '+money(+l.amount)+(kindCap ? ' + '+money(+l.fee)+' fee = '+money(+l.amount + +l.fee)+' to pay back'+(l.holdback ? ', '+l.holdback+'% of daily sales' : '') : +l.rate ? ' at '+l.rate+'% a year' : '')+(l.use_for ? ' · for '+l.use_for : '')),
+        l.kind === 'owner' ? h('p',null,'Money you put in is not income and not a write-off. Paying yourself back is not a write-off either.')
+          : h('p',null, y+': paid '+money(yy.paid)+' in '+yy.n+' payment'+(yy.n===1?'':'s')+' · ', h('b',null, money(yy.int)+' fee or interest counts'), ' (saves about '+money(yy.int*c.rate)+') · '+money(yy.prin)+' principal does not · '+money(x.owed)+' left to pay'),
+        kindCap ? h('p',{class:'small muted'},'The fee is fixed, so each payment carries the same share of it: '+((+l.amount + +l.fee) ? (100 * l.fee / (+l.amount + +l.fee)).toFixed(1) : 0)+'% of every dollar paid back. Fee still to come: '+money(x.feeLeft)+'.') : null,
+        list.length ? tbl(['Paid','Amount','Fee/interest','Principal',''], list) : h('p',{class:'muted small'},'No payments yet.'),
+        pf, h('div',{class:'row'}, h('label',{class:'f'},'Or import payments (.csv with a date and an amount column)', fi)),
+        h('div',{class:'row'}, h('button',{class:'btn quiet sm',type:'button',onclick:async()=>{ if (S().booksDelLoan !== l.id){ S().booksDelLoan = l.id; toast('Tap again to remove '+l.lender+' and its payments'); return; } await DB.delLoan(l.id); A.route(); }},'Remove this loan')))); });
+    const f = h('form',{class:'grid'},
+      h('label',{class:'f'},'Kind', h('select',{name:'kind'}, Object.entries(LOAN_KINDS).map(([k,t]) => h('option',{value:k},t)))),
+      h('label',{class:'f'},'From', h('input',{type:'text',name:'lender',maxlength:'120',required:true,placeholder:'Shopify Capital, bank name, yourself'})),
+      h('div',{class:'row'}, h('label',{class:'f'},'Date received', h('input',{type:'date',name:'started',required:true})), h('label',{class:'f'},'Amount received ($)', h('input',{type:'number',name:'amount',step:'0.01',min:'0',required:true}))),
+      h('div',{class:'row'}, h('label',{class:'f'},'Fixed fee ($, Shopify Capital)', h('input',{type:'number',name:'fee',step:'0.01',min:'0'})), h('label',{class:'f'},'Interest rate (% a year, loans)', h('input',{type:'number',name:'rate',step:'0.001',min:'0',max:'100'})),
+        h('label',{class:'f'},'Share of daily sales (%)', h('input',{type:'number',name:'hold',step:'0.01',min:'0',max:'100'}))),
+      h('label',{class:'f'},'What it paid for (optional)', h('input',{type:'text',name:'use',maxlength:'120',placeholder:'Holiday stock, shelving, roof'})),
+      h('p',{class:'small muted'},'Shopify Capital: Shopify admin > Finance > Capital shows each offer\'s amount, fee and payment history.'),
+      h('button',{class:'btn',type:'submit'},'Add'));
+    f.addEventListener('submit', async e => { e.preventDefault(); const d = new FormData(f);
+      try { await DB.saveLoan({kind:String(d.get('kind')), lender:String(d.get('lender')).trim(), started:String(d.get('started')), amount:+d.get('amount'), fee:+d.get('fee')||0, rate:+d.get('rate')||0, holdback:d.get('hold') ? +d.get('hold') : null, use_for:String(d.get('use')||'').trim() || null}); toast('Added'); A.route(); } catch(err){ toast(err.message); } });
+    box.append(card('Add a loan, advance or money you put in', f));
+    box.append(card('How it counts', h('ul',{class:'small'},
+      h('li',null,'Money you borrow is not income, and paying it back is not a write-off. Only the fee or interest counts, in the year you pay it (Schedule C line 16b).'),
+      h('li',null,'Shopify Capital: the fixed fee is spread over the payments, so the write-off grows as Shopify takes its share of your sales. This is the common way to count it; your accountant confirms.'),
+      h('li',null,'What the money bought counts on its own: stock through cost of goods sold, equipment on the Equipment list.'),
+      h('li',null,'Credit card interest on business purchases counts; the purchases themselves are logged in Expenses.'))));
+  }); }
+  function payCsv(text){
+    const rows = text.replace(/^﻿/, '').split(/\r?\n/).filter(Boolean).map(l => { const out = []; let cell = '', q = false;
+      for (let i = 0; i < l.length; i++){ const ch = l[i]; if (q){ if (ch === '"'){ if (l[i+1] === '"'){ cell += '"'; i++; } else q = false; } else cell += ch; } else if (ch === '"') q = true; else if (ch === ','){ out.push(cell); cell = ''; } else cell += ch; }
+      out.push(cell); return out; });
+    if (rows.length < 2) return [];
+    const hd = rows[0].map(x => x.trim().toLowerCase()), iD = hd.findIndex(x => /date|day/.test(x)), iA = hd.findIndex((x, i) => i !== iD && /amount|payment|paid|remit/.test(x)), iI = hd.findIndex(x => /fee|interest/.test(x));
+    if (iD < 0 || iA < 0) return [];
+    const num = v => { const n = parseFloat(String(v||'').replace(/[$,()]/g,'')); return isNaN(n) ? null : Math.abs(n); };
+    return rows.slice(1).map(r => { const d = String(r[iD]||'').trim(); let iso = (d.match(/^\d{4}-\d{2}-\d{2}/) || [])[0];
+      if (!iso){ const m = d.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); if (m) iso = m[3]+'-'+m[1].padStart(2,'0')+'-'+m[2].padStart(2,'0'); }
+      if (!iso){ const t = new Date(d); if (!isNaN(t)) iso = isoDay(t); }
+      return {paid_on:iso, amount:num(r[iA]), interest:iI >= 0 ? num(r[iI]) : null}; }).filter(r => r.paid_on && r.amount); }
+
   A.register({id:'books', name:'Tax year and write-offs', what:'Owner only. Yearly books tied to Shopify: sales by month, cost of goods sold, each purchase on its tax line with an estimate of what it saves, equipment depreciation, building costs, burn rate, limits, and files for the accountant and QuickBooks.', tiers:['owner'],
     views:{books:{t:'Tax year', ic:'🧮', render:v => { yearView(v); }, min:'owner'}, purchases:{t:'Each purchase', ic:'🧾', render:v => { purchasesView(v); }, min:'owner', hidden:true},
-      equipment:{t:'Equipment', ic:'🪑', render:v => { equipmentView(v); }, min:'owner', hidden:true}}});
+      equipment:{t:'Equipment', ic:'🪑', render:v => { equipmentView(v); }, min:'owner', hidden:true},
+      loans:{t:'Loans and capital', ic:'🏦', render:v => { loansView(v); }, min:'owner', hidden:true}}});
   A.ownerHooks.push(v => { if (!isOwner()) return; const c0 = h('div',{class:'card'}, h('h2',null,'Tax year '+new Date().getFullYear()), h('p',{class:'small muted'},'Adding it up…')); v.append(c0);
     compute(new Date().getFullYear(), 'all').then(c => { c0.lastChild.remove(); c0.append(h('p',null,'Profit so far about '+money(c.profit)+' · write-offs '+money(c.deductions + c.cogs)+' · set aside about '+money(Math.max(0, c.profit) * c.rate)+' for tax. ', h('a',{href:'#/books'},'Open'))); })
       .catch(() => { c0.lastChild.remove(); c0.append(h('p',{class:'small muted'},'Run supabase/books.sql to turn on the tax year. ', h('a',{href:'#/books'},'Open'))); }); });
-  A.books = {depFor, regular, treat, shopifyMonths, compute, CLASSES, RULES, YEARLY};
+  A.books = {loanMath, payCsv, depFor, regular, treat, shopifyMonths, compute, CLASSES, RULES, YEARLY};
 })();
