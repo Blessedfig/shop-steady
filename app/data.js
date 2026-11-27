@@ -13,14 +13,21 @@ window.APP_DATA = {
   // Business types. Each location picks one under Setup. A type sets the default words and which modules start on.
   // Add a type by copying one of these. "modules" lists the module ids that start switched on for that type.
   BUSINESS_TYPES: {
+<<<<<<< HEAD
     bookstore: {name:'Bookstore', tiers:{staff:'Bookseller', lead:'Shift lead', manager:'Store manager', owner:'Owner'},
       items:'titles', usesIsbn:true, modules:['shifts','till','shopify','ask','hr','decide','weekly','voice','count','people','catalog','orders','notes','taxlog','receiving','inventory','expenses','setup','logins']},
     retail:    {name:'Retail shop', tiers:{staff:'Sales associate', lead:'Shift lead', manager:'Store manager', owner:'Owner'},
       items:'products', usesIsbn:false, modules:['shifts','till','shopify','ask','hr','decide','weekly','voice','count','people','catalog','orders','notes','taxlog','receiving','inventory','expenses','setup','logins']},
+=======
+    bookstore: {name:'Bookstore', tiers:{staff:'Front desk', lead:'Shift lead', manager:'Store manager', owner:'Owner'},
+      items:'titles', usesIsbn:true, modules:['shifts','frontdesk','till','shopify','ask','hr','decide','weekly','voice','count','people','notes','taxlog','receiving','inventory','expenses','setup','logins']},
+    retail:    {name:'Retail shop', tiers:{staff:'Front desk', lead:'Shift lead', manager:'Store manager', owner:'Owner'},
+      items:'products', usesIsbn:false, modules:['shifts','frontdesk','till','shopify','ask','hr','decide','weekly','voice','count','people','notes','taxlog','receiving','inventory','expenses','setup','logins']},
+>>>>>>> origin/main
     cafe:      {name:'Café or food counter', tiers:{staff:'Barista', lead:'Shift lead', manager:'Manager', owner:'Owner'},
-      items:'supplies', usesIsbn:false, modules:['shifts','till','shopify','ask','hr','decide','weekly','voice','count','people','notes','taxlog','receiving','inventory','expenses','setup','logins']},
-    services:  {name:'Services or rentals', tiers:{staff:'Team member', lead:'Lead', manager:'Manager', owner:'Owner'},
-      items:'supplies', usesIsbn:false, modules:['shifts','till','shopify','ask','hr','decide','weekly','voice','count','people','notes','taxlog','receiving','inventory','expenses','setup','logins']}
+      items:'supplies', usesIsbn:false, modules:['shifts','frontdesk','till','shopify','ask','hr','decide','weekly','voice','count','people','notes','taxlog','receiving','inventory','expenses','setup','logins']},
+    services:  {name:'Services or rentals', tiers:{staff:'Front desk', lead:'Lead', manager:'Manager', owner:'Owner'},
+      items:'supplies', usesIsbn:false, modules:['shifts','frontdesk','till','shopify','ask','hr','decide','weekly','voice','count','people','notes','taxlog','receiving','inventory','expenses','setup','logins']}
   },
   // Locations (Steady Shift called these "homes" or "sites"). One is enough to start.
   // The demo shows one retail store and one service business under the same owner.
