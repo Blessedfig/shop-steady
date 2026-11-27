@@ -111,3 +111,25 @@ added in Nov 2026: press **Connect Shopify** once more on the Shopify screen to 
 - **Accounts in progress** lists every vendor that isn't Active or Not using, with status (To apply, Applying, Approved...), the date applied,
   the checklist, the application link and the documents you kept with it. Documents are readable by managers and the owner only.
 - Needs the Supabase secret `ANTHROPIC_API_KEY` (already used by Receiving) and the updated `doc-import` function deployed.
+
+## Package tracking and "where is my book?"
+- **Find a customer's order** (Orders screen, everyone): search by customer name, title, ISBN or order number. It shows the vendor,
+  when it was ordered, the expected date, whether it has arrived, and a tracking link for each package (UPS, USPS, FedEx, Amazon).
+  No costs are shown. **Add to order** in Title search asks who a special order is for.
+- Tracking comes from vendors' shipping emails. PRH's "Email ASN" lists your PO, each ISBN and the UPS tracking number; it is read exactly.
+  Amazon and Faire "shipped" emails are read by the AI. A notice is matched to your order by PO number (type the app's PO number,
+  e.g. PO-1003, in the PO field on PRH Self-Service), else by the vendor's order number, else by vendor and ISBN.
+- Until the mailbox is connected, managers can paste a shipping email under **Add tracking from a shipping email** on the Orders screen.
+
+## Connecting the store mailbox (read only)
+The `mailbox` function reads the Zoho mailbox every 30 minutes for shipping emails and supplier replies. It never sends, moves or deletes mail.
+1. In Zoho's API console (api-console.zoho.com) add a **Self Client**. Generate a code with scope `ZohoMail.messages.READ,ZohoMail.accounts.READ`,
+   then exchange it for a refresh token (Zoho shows the steps on that page).
+2. Supabase > Edge Functions > Secrets: add `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REFRESH_TOKEN` (and `ZOHO_DC` if your Zoho is not .com).
+3. Deploy `supabase/functions/mailbox` with "Verify JWT" off (the timer has no sign-in; the code checks the key or the person).
+The timer runs only after Shopify is connected (it reuses that timer key).
+
+## Supplier replies (Vendor setup)
+For every vendor that isn't Active yet, mail from its domain (taken from its emails and website) is filed under that vendor:
+replies, automatic acknowledgements and bounces. **Supplier mail waiting on you** lists replies and bounces until you mark them done.
+Opening a new account: use the vendor's online application first; email only when there is no form. Vendor setup puts the application link first.

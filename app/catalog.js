@@ -222,7 +222,7 @@
       toast(error ? 'Could not save: ' + error.message : 'Saved'); if (!error){ o.availability = sel.value; o.checked_at = new Date().toISOString(); A.route(); } });
     if (window.SSOrders){
       const q = h('input',{type:'number', min:'1', max:'999', value:'1', 'aria-label':'Copies to order from ' + o.vendor, style:'max-width:5rem'});
-      tools.append(q, h('button',{class:'btn sm', type:'button', onclick:async e => { const note = prompt('Note for this line (optional, e.g. special order for a customer)') || ''; if (await SSOrders.addToOrder(o.vendor_id, t.item_key, +q.value || 1, note)) e.target.textContent = 'Added ✓'; }}, 'Add to order'));
+      tools.append(q, h('button',{class:'btn sm', type:'button', onclick:async e => { const who = prompt('Special order? Type the customer’s name (or leave blank for shelf stock)'); if (who === null) return; if (await SSOrders.addToOrder(o.vendor_id, t.item_key, +q.value || 1, who.trim() ? 'special order' : '', who.trim())) e.target.textContent = 'Added ✓'; }}, 'Add to order'));
     }
     tools.append(sel);
     if (o.quote) tools.append(h('button',{class:'btn quiet sm', type:'button', onclick:e => A.copy(t.title + ' (' + t.item_key + ') from ' + o.vendor + ': ' + fmt(+o.quote.price) + (o.cost != null ? ', cost ' + fmt(+o.cost) : ''), e.target)}, 'Copy quote'));
@@ -459,7 +459,7 @@
     const go = h('button',{class:'btn', type:'submit'}, 'Read it');
     const out = h('div');
     const f = h('form',{class:'card'}, h('h2',null,'Add vendors from a document'),
-      h('p',{class:'small muted'},'Supplier research, a terms sheet, a rep’s email, an account application (PDF, Word, text or Markdown). Nothing is saved until you approve it.'),
+      h('p',{class:'small muted'},'Supplier research, a terms sheet, a rep’s email, an account application (PDF, Word, text or Markdown). Works for any kind of supplier. The app puts each supplier’s online application first and email only as a fallback. Nothing is saved until you approve it.'),
       h('div',{class:'row'}, fi, go), out);
     f.addEventListener('submit', async e => {
       e.preventDefault(); const file = fi.files[0]; if (!file) return;
@@ -486,7 +486,7 @@
         out.append(h('div',{class:'item'},
           h('label',{class:'row'}, cb, h('b',null, x.name), h('span',{class:'chip ' + (isNew ? 'calm' : 'grey')}, isNew ? 'New' : 'Fills blanks only'), h('span',{class:'chip amber'}, x.status)),
           x.covers ? h('p',{class:'small'}, 'Covers: ' + x.covers) : null,
-          x.apply_url || x.apply_email ? h('p',{class:'small'}, 'Apply: ' + [x.apply_url, x.apply_email].filter(Boolean).join(' · ')) : null,
+          x.apply_url ? h('p',{class:'small'}, 'Apply online: ' + x.apply_url) : x.apply_email ? h('p',{class:'small'}, 'No online form found yet. Email: ' + x.apply_email) : null,
           x.needs ? h('p',{class:'small'}, 'Needs: ' + x.needs) : null,
           x.steps.length ? h('ul',{class:'small'}, x.steps.map(st => h('li',null, (st.done ? '✓ ' : '') + WHO[st.who] + ': ' + st.step))) : null,
           x.quote ? h('p',{class:'small muted'}, '“' + x.quote + '”') : null));
@@ -506,15 +506,35 @@
     const {data:vendors, error} = await A.sb.from('vendors').select('*').order('name');
     if (error){ v.append(h('p',{class:'msg err'}, /schema cache|column/.test(error.message) ? 'Run the latest supabase/catalog.sql in Supabase first.' : error.message)); return; }
     const {data:docs} = await A.sb.from('vendor_docs').select('id,name,vendor_ids,uploaded_at').order('uploaded_at', {ascending:false}).limit(200);
+    const {data:mail} = await A.sb.from('vendor_mail').select('*').order('received_at', {ascending:false}).limit(300);
+    const byVendor = id => (mail || []).filter(m => m.vendor_id === id);
+    const waiting = (mail || []).filter(m => !m.done && m.kind !== 'auto');
+    if (waiting.length){
+      const names = Object.fromEntries((vendors || []).map(x => [x.id, x.name]));
+      v.append(h('div',{class:'card'}, h('h2',null,'Supplier mail waiting on you (' + waiting.length + ')'),
+        ...waiting.map(m => mailRow(m, names[m.vendor_id]))));
+    }
     const open = vendors.filter(x => x.status !== 'Active' && x.status !== 'Not using');
     const card = h('div',{class:'card'}, h('h2',null,'Accounts in progress (' + open.length + ')'));
     if (!open.length) card.append(h('p',{class:'small muted'},'Every vendor is active. Upload notes above to start a new one.'));
-    open.sort((a,b) => SETUP.indexOf(a.status) - SETUP.indexOf(b.status) || a.name.localeCompare(b.name)).forEach(x => card.append(setupRow(x, docs || [])));
+    open.sort((a,b) => SETUP.indexOf(a.status) - SETUP.indexOf(b.status) || a.name.localeCompare(b.name)).forEach(x => card.append(setupRow(x, docs || [], byVendor(x.id))));
     v.append(card);
     const done = vendors.filter(x => x.status === 'Not using');
     if (done.length) v.append(h('div',{class:'card'}, h('h2',null,'Not using'), h('ul',{class:'small'}, done.map(x => h('li',null, x.name + (x.notes ? ': ' + x.notes : ''))))));
   }
-  function setupRow(x, docs){
+  const KIND = {reply:['Reply','amber'], auto:['Automatic reply','grey'], bounce:['Bounced','red']};
+  function mailRow(m, vendorName){
+    const [label, tone] = KIND[m.kind] || KIND.reply;
+    const row = h('div',{class:'item'},
+      h('div',{class:'row'}, vendorName ? h('b',null, vendorName) : null, h('span',{class:'chip ' + tone}, label), h('span',{class:'small muted'}, A.fmtDate(m.received_at))),
+      h('p',{class:'small'}, m.subject || ''), m.summary ? h('p',{class:'small muted'}, m.summary.slice(0, 240)) : null);
+    if (!m.done && m.kind !== 'auto') row.append(h('button',{class:'btn quiet sm', type:'button', onclick:async e => {
+      const {error} = await A.sb.from('vendor_mail').update({done:true}).eq('id', m.id);
+      if (error) return toast('Could not save: ' + error.message); m.done = true; e.target.replaceWith(h('span',{class:'small muted'},'Done ✓')); }}, m.kind === 'bounce' ? 'Fixed the address' : 'I answered it'));
+    return row;
+  }
+  function setupRow(x, docs, mails){
+    mails = mails || [];
     const sel = h('select',{'aria-label':'Account status for ' + x.name}, SETUP.map(s => h('option',{value:s, selected:s === x.status}, s)));
     const save = async patch => { const {error} = await A.sb.from('vendors').update(Object.assign(patch, {updated_at:new Date().toISOString()})).eq('id', x.id); toast(error ? 'Could not save: ' + error.message : 'Saved'); return !error; };
     sel.addEventListener('change', async () => { const patch = {status:sel.value}; if (sel.value === 'Applying' && !x.applied_on) patch.applied_on = new Date().toISOString().slice(0,10); if (await save(patch)) Object.assign(x, patch); });
@@ -527,15 +547,18 @@
     add.addEventListener('keydown', e => { if (e.key !== 'Enter' || !add.value.trim()) return; e.preventDefault(); steps.push({step:add.value.trim(), who:'owner', done:false}); save({setup_steps:steps}).then(() => A.route()); });
     const mine = docs.filter(d => (d.vendor_ids || []).includes(x.id));
     const links = h('div',{class:'row'});
-    if (x.apply_url) links.append(h('a',{class:'btn quiet sm', href:x.apply_url, target:'_blank', rel:'noopener'}, 'Open the application'));
-    if (x.apply_email) links.append(h('a',{class:'btn quiet sm', href:'mailto:' + encodeURIComponent(x.apply_email) + '?subject=' + encodeURIComponent('New account: ' + A.site().name)}, 'Email ' + x.apply_email));
+    // online application first; email only when there's no form
+    if (x.apply_url) links.append(h('a',{class:'btn sm', href:x.apply_url, target:'_blank', rel:'noopener'}, 'Fill in the online application'));
+    else if (x.website) links.append(h('a',{class:'btn quiet sm', href:x.website, target:'_blank', rel:'noopener'}, 'Look for an application on their site'));
+    if (x.apply_email) links.append(h('a',{class:'btn quiet sm', href:'mailto:' + encodeURIComponent(x.apply_email) + '?subject=' + encodeURIComponent('New account: ' + A.site().name)}, x.apply_url ? 'Email instead' : 'Email ' + x.apply_email));
     mine.forEach(d => links.append(h('button',{class:'btn quiet sm', type:'button', onclick:async () => { const {data} = await A.sb.from('vendor_docs').select('body').eq('id', d.id).single();
       if (data) window.open(URL.createObjectURL(new Blob([data.body], {type:'text/plain;charset=utf-8'})), '_blank', 'noopener'); }}, '📄 ' + d.name)));
     return h('div',{class:'item'},
       h('div',{class:'row'}, h('b',null, x.name), sel, x.applied_on ? h('span',{class:'small muted'}, 'applied ' + A.fmtDate(x.applied_on)) : null),
       x.covers ? h('p',{class:'small'}, 'Covers: ' + x.covers) : null,
       x.needs ? h('p',{class:'small'}, 'The application asks for: ' + x.needs) : null,
-      list, add, links);
+      list, add, links,
+      mails.length ? h('details',null, h('summary',{class:'small'}, 'Mail from ' + x.name + ' (' + mails.length + ')'), ...mails.map(m => mailRow(m))) : null);
   }
 
   A.register({id:'catalog', name:'Title search and catalogs', what:'One search across every vendor’s title list with stock, cost, margin and special-order price; managers load ONIX feeds, CSV title lists, Faire exports and stock files.', tiers:['staff','lead','manager','owner'],

@@ -987,3 +987,168 @@ begin
 end $$;
 revoke all on function public.apply_vendor_setup(jsonb) from public, anon;
 grant execute on function public.apply_vendor_setup(jsonb) to authenticated;
+
+-- 13. Package tracking and customer special-order lookup.
+--   Shipping notices (PRH "Email ASN", Amazon or Faire shipping emails, a pasted notice) attach carrier tracking to the
+--   matching sent order: by the order's PO number or vendor order number, else by vendor + ISBN on the oldest open order.
+--   The shipments function reads them from the store mailbox automatically once it is connected (see CATALOG.md).
+alter table public.purchase_order_lines add column if not exists customer text check (length(customer) <= 80); -- who it is for (special orders)
+alter table public.purchase_orders add column if not exists vendor_po text check (length(vendor_po) <= 40);    -- the PO number typed on the vendor's site
+create table if not exists public.shipment_notices (
+  id          uuid primary key default gen_random_uuid(),
+  source_id   text unique check (length(source_id) <= 120),  -- mail id, so the same email is never read twice
+  vendor_id   uuid references public.vendors(id) on delete set null,
+  vendor_name text check (length(vendor_name) <= 80),
+  po_ref      text check (length(po_ref) <= 60),
+  order_ref   text check (length(order_ref) <= 60),
+  carrier     text check (length(carrier) <= 60),
+  tracking    text[] not null default '{}',
+  ship_date   date,
+  lines       jsonb not null default '[]',   -- [{isbn, qty, unit_price, title}]
+  po_ids      uuid[] not null default '{}',  -- orders it was matched to
+  created_at  timestamptz not null default now()
+);
+alter table public.shipment_notices enable row level security;
+revoke all on public.shipment_notices from anon, authenticated;
+grant select on public.shipment_notices to authenticated;
+drop policy if exists "managers read shipment notices" on public.shipment_notices;
+create policy "managers read shipment notices" on public.shipment_notices for select to authenticated using (public.role_rank(public.my_role()) >= 3);
+
+-- Record one notice and match it to orders. Called by managers (paste) or by the shipments function (service role).
+create or replace function public.record_shipment_notice(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare nid uuid; vid uuid; pos uuid[] := '{}'; l jsonb; k text; hit uuid;
+  trk text[] := coalesce((select array_agg(distinct left(upper(regexp_replace(x,'\s','','g')),40)) from jsonb_array_elements_text(coalesce(p->'tracking','[]')) x
+                          where regexp_replace(x,'\s','','g') ~ '^[A-Za-z0-9]{8,40}$'), '{}');
+begin
+  if coalesce(auth.jwt() ->> 'role','') <> 'service_role' and public.role_rank(public.my_role()) < 3 then raise exception 'manager-only'; end if;
+  if p->>'source_id' is not null and exists (select 1 from public.shipment_notices where source_id = p->>'source_id') then
+    return jsonb_build_object('duplicate', true); end if;
+  vid := case when (p->>'vendor_id') ~ '^[0-9a-f-]{36}$' then (p->>'vendor_id')::uuid else public.find_vendor(p->>'vendor_name') end;
+  -- 1. by PO number (ours or the one typed on the vendor's site) or vendor order number
+  select coalesce(array_agg(o.id), '{}') into pos from public.purchase_orders o
+   where o.status in ('sent','confirmed','received') and (vid is null or o.vendor_id = vid)
+     and (((p->>'po_ref') is not null and (upper(o.po_number) = upper(p->>'po_ref') or o.vendor_po = p->>'po_ref' or o.vendor_ref = p->>'po_ref'))
+       or ((p->>'order_ref') is not null and o.vendor_ref = p->>'order_ref'));
+  -- 2. else by ISBN on that vendor's oldest open order
+  if cardinality(pos) = 0 and vid is not null then
+    for l in select * from jsonb_array_elements(coalesce(p->'lines','[]')) loop
+      k := public.shopify_item_key(l->>'isbn', null);
+      select o.id into hit from public.purchase_orders o join public.purchase_order_lines pl on pl.po_id = o.id
+       where o.vendor_id = vid and o.status in ('sent','confirmed') and pl.item_key = k and pl.qty_received < pl.qty
+       order by o.sent_at nulls last limit 1;
+      if hit is not null and not hit = any(pos) then pos := pos || hit; end if;
+    end loop;
+  end if;
+  insert into public.shipment_notices (source_id, vendor_id, vendor_name, po_ref, order_ref, carrier, tracking, ship_date, lines, po_ids)
+  values (left(p->>'source_id',120), vid, left(p->>'vendor_name',80), left(p->>'po_ref',60), left(p->>'order_ref',60), left(p->>'carrier',60), trk,
+          case when (p->>'ship_date') ~ '^\d{4}-\d{2}-\d{2}$' then (p->>'ship_date')::date end, coalesce(p->'lines','[]'), pos)
+  returning id into nid;
+  -- a vendor that ships has confirmed the order
+  update public.purchase_orders set status = 'confirmed', updated_at = now() where id = any(pos) and status = 'sent';
+  return jsonb_build_object('id', nid, 'matched', cardinality(pos), 'tracking', to_jsonb(trk));
+end $$;
+revoke all on function public.record_shipment_notice(jsonb) from public, anon;
+grant execute on function public.record_shipment_notice(jsonb) to authenticated, service_role;
+
+-- Look up special orders and their packages by customer, title, ISBN or order number. Everyone signed in (no costs).
+create or replace function public.lookup_orders(p_q text) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare q text := trim(coalesce(p_q,'')); k text := public.shopify_item_key(regexp_replace(coalesce(p_q,''),'[^0-9Xx]','','g'), null);
+begin
+  if not public.is_desk_member() then raise exception 'not-member'; end if;
+  if length(q) < 2 then return '[]'::jsonb; end if;
+  return coalesce((select jsonb_agg(r order by r->>'added_at' desc) from (
+    select jsonb_build_object('line_id', pl.id, 'customer', pl.customer, 'note', pl.note, 'title', c.title, 'item_key', pl.item_key, 'qty', pl.qty,
+      'qty_received', pl.qty_received, 'received_at', pl.received_at, 'added_at', pl.added_at,
+      'vendor', v.name, 'po_number', o.po_number, 'status', o.status, 'sent_at', o.sent_at, 'expected_on', o.expected_on, 'vendor_ref', o.vendor_ref,
+      'packages', coalesce((select jsonb_agg(jsonb_build_object('carrier', s.carrier, 'tracking', s.tracking, 'ship_date', s.ship_date) order by s.ship_date)
+                   from public.shipment_notices s where o.id = any(s.po_ids)), '[]')) r
+    from public.purchase_order_lines pl join public.purchase_orders o on o.id = pl.po_id
+    join public.vendors v on v.id = o.vendor_id join public.catalog_titles c on c.item_key = pl.item_key
+    where o.status <> 'cancelled' and (pl.customer ilike '%' || q || '%' or pl.note ilike '%' || q || '%' or c.title ilike '%' || q || '%'
+       or pl.item_key = k or upper(o.po_number) = upper(q) or o.vendor_ref = q or o.vendor_po = q)
+    order by pl.added_at desc limit 50) x), '[]'::jsonb);
+end $$;
+revoke all on function public.lookup_orders(text) from public, anon;
+grant execute on function public.lookup_orders(text) to authenticated;
+
+-- Add to order now also records who a special order is for.
+drop function if exists public.add_to_order(uuid, text, int, text);
+create or replace function public.add_to_order(p_vendor uuid, p_item text, p_qty int default 1, p_note text default null, p_customer text default null) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare po uuid; c numeric; o public.vendor_offers; t public.catalog_titles; v public.vendors;
+begin
+  if not public.is_desk_member() then raise exception 'not-member'; end if;
+  if coalesce(p_qty,0) not between 1 and 9999 then raise exception 'quantity 1 to 9999'; end if;
+  select * into t from public.catalog_titles where item_key = p_item; if t.item_key is null then raise exception 'unknown title'; end if;
+  select * into v from public.vendors where id = p_vendor; if v.id is null then raise exception 'unknown vendor'; end if;
+  select id into po from public.purchase_orders where vendor_id = p_vendor and status = 'draft';
+  if po is null then insert into public.purchase_orders (vendor_id) values (p_vendor) returning id into po; end if;
+  select * into o from public.vendor_offers where vendor_id = p_vendor and item_key = p_item;
+  c := case when o.vendor_id is null then null else public.offer_cost(o, t, v, p_qty) end;
+  if c is null and t.list_price is not null and v.default_discount is not null then c := round(t.list_price * (1 - v.default_discount), 2); end if;
+  insert into public.purchase_order_lines as l (po_id, item_key, qty, unit_cost, note, customer)
+  values (po, p_item, p_qty, c, left(nullif(trim(p_note),''),200), left(nullif(trim(p_customer),''),80))
+  on conflict (po_id, item_key) do update set qty = least(l.qty + excluded.qty, 9999),
+    note = coalesce(nullif(concat_ws('; ', l.note, excluded.note), ''), l.note), unit_cost = coalesce(excluded.unit_cost, l.unit_cost),
+    customer = coalesce(nullif(concat_ws('; ', l.customer, excluded.customer), ''), l.customer);
+  update public.purchase_orders set updated_at = now() where id = po;
+  return po;
+end $$;
+revoke all on function public.add_to_order(uuid, text, int, text, text) from public, anon;
+grant execute on function public.add_to_order(uuid, text, int, text, text) to authenticated;
+
+-- 14. Supplier replies: the mailbox function also files emails from vendors you are opening accounts with
+--   (replies, auto-acknowledgements, bounces), so Vendor setup shows what is waiting on you.
+create table if not exists public.vendor_mail (
+  id          uuid primary key default gen_random_uuid(),
+  source_id   text unique not null check (length(source_id) <= 120),
+  vendor_id   uuid references public.vendors(id) on delete cascade,
+  kind        text not null check (kind in ('reply','auto','bounce')),
+  sender      text check (length(sender) <= 200),
+  subject     text check (length(subject) <= 300),
+  summary     text check (length(summary) <= 600),
+  received_at timestamptz not null,
+  done        boolean not null default false,  -- you've dealt with it
+  created_at  timestamptz not null default now()
+);
+create index if not exists vendor_mail_vendor on public.vendor_mail (vendor_id, received_at desc);
+alter table public.vendor_mail enable row level security;
+revoke all on public.vendor_mail from anon, authenticated;
+grant select, update (done) on public.vendor_mail to authenticated;
+drop policy if exists "managers read vendor mail" on public.vendor_mail;
+create policy "managers read vendor mail" on public.vendor_mail for select to authenticated using (public.role_rank(public.my_role()) >= 3);
+drop policy if exists "managers mark vendor mail" on public.vendor_mail;
+create policy "managers mark vendor mail" on public.vendor_mail for update to authenticated
+  using (public.role_rank(public.my_role()) >= 3) with check (public.role_rank(public.my_role()) >= 3);
+
+-- Mail domains to watch: every vendor not yet Active, from its emails and website.
+create or replace view public.vendor_mail_watch with (security_invoker = false) as
+  select v.id as vendor_id, v.name, v.status, d.domain
+  from public.vendors v,
+  lateral (select distinct lower(substring(x from '@([A-Za-z0-9.-]+)$')) as domain from unnest(array[v.email, v.apply_email, v.order_email]) x where x like '%@%'
+           union select lower(regexp_replace(substring(v.website from '^https?://([^/]+)'), '^www\.', '')) where v.website is not null) d
+  where v.status in ('To apply','Applying','Approved, not ordering yet') and d.domain is not null and d.domain <> '';
+revoke all on public.vendor_mail_watch from public, anon, authenticated;
+grant select on public.vendor_mail_watch to service_role;
+
+-- Timer: every 30 minutes the mailbox function reads shipping emails and supplier replies (only when its Zoho secrets are set).
+create or replace function public.mailbox_tick() returns void
+language plpgsql security definer set search_path = public as $$
+declare k text;
+begin
+  select cron_key into k from public.shopify_conn where id = 1;
+  if k is null then return; end if;
+  perform net.http_post(
+    url := 'https://rtgpxuiwcdfdpnepfnoy.supabase.co/functions/v1/mailbox',
+    headers := jsonb_build_object('Content-Type','application/json','x-sync-key', k),
+    body := '{"action":"tick"}'::jsonb, timeout_milliseconds := 120000);
+end $$;
+revoke all on function public.mailbox_tick() from public, anon, authenticated;
+do $$ begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.unschedule(jobid) from cron.job where jobname = 'mailbox';
+    perform cron.schedule('mailbox', '7-59/30 * * * *', 'select public.mailbox_tick()');
+  end if;
+end $$;

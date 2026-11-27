@@ -28,11 +28,66 @@
   async function rpc(name, args){ const r = await A.sb.rpc(name, args); if (r.error) throw new Error(r.error.message); return r.data; }
 
   // Used by Title search: add one title to the vendor's open order.
-  async function addToOrder(vendorId, itemKey, qty, note){
-    try { await rpc('add_to_order', {p_vendor:vendorId, p_item:itemKey, p_qty:qty || 1, p_note:note || null}); toast('Added to the order'); return true; }
+  async function addToOrder(vendorId, itemKey, qty, note, customer){
+    try { await rpc('add_to_order', {p_vendor:vendorId, p_item:itemKey, p_qty:qty || 1, p_note:note || null, p_customer:customer || null}); toast('Added to the order'); return true; }
     catch(e){ toast(/add_to_order|schema cache/.test(e.message) ? 'Ordering is not set up yet: run the latest supabase/catalog.sql' : 'Could not add: ' + e.message); return false; }
   }
   window.SSOrders = {addToOrder};
+
+  // Package tracking links by carrier (number shape), opened on the carrier's own site.
+  function trackUrl(n, carrier){
+    const c = (carrier || '').toLowerCase();
+    if (/^1Z[0-9A-Z]{16}$/i.test(n) || /ups/.test(c)) return 'https://www.ups.com/track?tracknum=' + encodeURIComponent(n);
+    if (/^TBA\d+/i.test(n) || /amazon/.test(c)) return 'https://track.amazon.com/tracking/' + encodeURIComponent(n);
+    if (/^(94|93|92|95)\d{18,20}$/.test(n) || /usps|postal/.test(c)) return 'https://tools.usps.com/go/TrackConfirmAction?tLabels=' + encodeURIComponent(n);
+    if (/^\d{12}$|^\d{15}$/.test(n) || /fedex/.test(c)) return 'https://www.fedex.com/fedextrack/?trknbr=' + encodeURIComponent(n);
+    return 'https://www.google.com/search?q=' + encodeURIComponent('track package ' + n);
+  }
+  const WHERE = {draft:'Not sent yet', sent:'Sent to vendor', confirmed:'Vendor confirmed or shipped', received:'Arrived', cancelled:'Cancelled'};
+
+  // Anyone at the counter: "where is my book?" Search by customer, title, ISBN or order number.
+  function lookupCard(){
+    const inp = h('input',{type:'search', placeholder:'Customer name, title, ISBN or order number', 'aria-label':'Find a customer order', autocomplete:'off'});
+    const out = h('div');
+    const f = h('form',{class:'card'}, h('h2',null,'Find a customer’s order'), h('div',{class:'row'}, inp, h('button',{class:'btn', type:'submit'}, 'Find')), out);
+    f.addEventListener('submit', async e => {
+      e.preventDefault(); if (inp.value.trim().length < 2) return;
+      out.replaceChildren(h('p',{class:'muted'},'Looking…'));
+      let rows; try { rows = await rpc('lookup_orders', {p_q:inp.value.trim()}); } catch(err){ out.replaceChildren(h('p',{class:'msg err'}, /lookup_orders|schema cache/.test(err.message) ? 'Run the latest supabase/catalog.sql in Supabase first.' : err.message)); return; }
+      out.replaceChildren();
+      if (!rows.length){ out.append(h('p',{class:'small'},'No order found. Check the spelling, or search by the book’s title.')); return; }
+      rows.forEach(r => {
+        const got = r.qty_received >= r.qty;
+        const pk = (r.packages || []).flatMap(p => (p.tracking || []).map(n => h('a',{class:'btn quiet sm', href:trackUrl(n, p.carrier), target:'_blank', rel:'noopener'}, 'Track ' + (p.carrier ? p.carrier.split(' ')[0] : 'package') + ' …' + n.slice(-6))));
+        out.append(h('div',{class:'item'},
+          h('div',{class:'row'}, h('b',null, r.title), h('span',{class:'chip ' + (got ? 'calm' : r.status === 'draft' ? 'grey' : 'amber')}, got ? 'Here, ready for pickup' : WHERE[r.status] || r.status)),
+          h('p',{class:'small'}, [r.customer ? 'For ' + r.customer : '', r.qty + ' from ' + r.vendor, r.po_number, r.sent_at ? 'ordered ' + A.fmtDate(r.sent_at) : '', r.expected_on && !got ? 'expected ' + A.fmtDate(r.expected_on) : '', got && r.received_at ? 'arrived ' + A.fmtDate(r.received_at) : ''].filter(Boolean).join(' · ')),
+          r.note ? h('p',{class:'small muted'}, r.note) : null,
+          pk.length ? h('div',{class:'row'}, ...pk) : (r.status === 'sent' || r.status === 'confirmed') && !got ? h('p',{class:'small muted'},'No tracking number yet.') : null));
+      });
+    });
+    return f;
+  }
+
+  // Managers: paste a vendor's shipping email (PRH ship notice, Amazon or Faire "shipped") to attach its tracking.
+  function pasteCard(){
+    const ta = h('textarea',{rows:'4', placeholder:'Paste the shipping email here', 'aria-label':'Shipping email text'});
+    const go = h('button',{class:'btn sm', type:'submit'}, 'Add tracking'), msg = h('p',{class:'small'});
+    const f = h('details',{class:'card'}, h('summary',null, h('b',null,'Add tracking from a shipping email')),
+      h('p',{class:'small muted'},'Once the store mailbox is connected this happens by itself every 30 minutes. Until then, paste a vendor’s shipping email here.'),
+      h('form',null, ta, h('div',{class:'row'}, go), msg));
+    f.querySelector('form').addEventListener('submit', async e => {
+      e.preventDefault(); if (!ta.value.trim()) return; go.disabled = true; msg.textContent = 'Reading…';
+      const {data, error} = await A.sb.functions.invoke('shipments', {body:{action:'paste', text:ta.value}});
+      let err = data && data.error; if (error && !err){ try { err = (await error.context.json()).error; } catch(_){ err = error.message; } }
+      go.disabled = false;
+      if (err){ msg.textContent = err === 'no-tracking' ? 'No tracking number found in that text.' : 'Could not read it: ' + err; return; }
+      const n = data.notice, r = data.result || {};
+      msg.textContent = r.duplicate ? 'Already recorded.' : (n.vendor_name || 'Vendor') + ': ' + n.tracking.join(', ') + (r.matched ? ' added to ' + r.matched + ' order' + (r.matched > 1 ? 's' : '') + '.' : ' saved, but no matching sent order was found.');
+      ta.value = '';
+    });
+    return f;
+  }
 
   // Sent orders become Receiving shipments, so the shipment is waiting when the boxes come.
   function toReceiving(o, ref, eta){
@@ -149,7 +204,8 @@
     let orders;
     try { orders = await rpc('list_orders', {p_status:null}); }
     catch(e){ box.replaceChildren(h('p',{class:'msg err'}, /list_orders|schema cache/.test(e.message) ? 'Ordering is not set up yet. The owner needs to run the latest supabase/catalog.sql in Supabase.' : e.message)); return; }
-    box.replaceChildren();
+    box.replaceChildren(lookupCard());
+    if (isMgr()) box.append(pasteCard());
     syncReceiving(orders);
     if (!orders.length) box.append(h('div',{class:'card'}, h('p',null,'No orders yet. Find a title in '), h('a',{href:'#/titles'},'Title search'), h('p',{class:'small muted'},' and press Add to order next to the vendor you want.')));
     if (isMgr()) box.append(await reorderCard());

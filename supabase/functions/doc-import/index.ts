@@ -46,14 +46,17 @@ const SCHEMA = {
 };
 
 // mode "vendors": notes, research, terms or an application about suppliers -> vendor records and a setup checklist.
-const VENDOR_SYSTEM = `You read a bookstore owner's notes, research, terms sheets or account applications about suppliers
-(publishers, distributors, wholesalers, marketplaces) and turn them into vendor records the store can act on.
+const VENDOR_SYSTEM = `You read a retail or service business owner's notes, research, terms sheets or account applications about
+suppliers (manufacturers, brands, publishers, distributors, wholesalers, marketplaces) and turn them into vendor records the store can act on.
 For each supplier named: its name; kind; which publishers, imprints or lines it covers; website; how the store orders
 from it and the ordering link or order email; a stock check link if one is given; its usual discount off list (as a
 fraction, 0.46 for 46%), terms, minimum order and returnability if stated; where the store is in opening an account
 (status); the application link or email; what the application asks for (needs); and a short checklist of the next steps,
 each marked by who does it: "owner" (only the owner can: signatures, resale certificate, tax id, references, payment
 choice, captchas), "app" (filling and sending forms or emails that need no private data) or "vendor" (waiting on them).
+Opening an account: the supplier's own online application or sign-up form always comes first. Put its link in apply_url
+and make the first step "Fill in the online application"; give apply_email and an email step only when no online form
+is known, and then add a step to check the supplier's website for one.
 Use status "Active" only for suppliers the store already orders from. If the document says the store will not use a
 supplier, give status "Not using" and the reason in notes.
 Never output passwords, account numbers, tax ids, social security numbers, bank or card numbers, or signatures, even if
