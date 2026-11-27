@@ -1,4 +1,4 @@
--- Free trial codes for the Shop Steady test app (Supabase project "owner-desk").
+-- Free trial codes for the Downtown Stube test app (Supabase project "owner-desk").
 -- the owner runs this once: Supabase > SQL Editor > New query > paste the whole file > Run. Running it again is safe.
 -- Then follow the "Turn on trial codes" steps in desk/README.md (hook, sign-ups, email template).
 --
@@ -78,7 +78,7 @@ begin
   end if;
   if c = '' then
     return jsonb_build_object('error', jsonb_build_object('http_code', 403,
-      'message', 'Shop Steady is invite only. To sign up you need a free trial code.'));
+      'message', 'Downtown Stube is invite only. To sign up you need a free trial code.'));
   end if;
   if em = '' then
     return jsonb_build_object('error', jsonb_build_object('http_code', 400, 'message', 'Please sign up with an email address.'));

@@ -1,4 +1,6 @@
-# Shop Steady
+# Downtown Stube
+
+*Stube* (say "SHTOO-beh") is the cozy back room of a Wisconsin German tavern, where the regulars and the crew gather. That is the idea: one warm room where a small shop's team finds what it needs today.
 
 A staff and owner app for small brick-and-mortar businesses: retail shops, bookstores, cafés and service businesses.
 Built first for The Blessed Fig Tree (an independent bookstore with rooms upstairs), and set up so any small business can use it.

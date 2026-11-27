@@ -1,4 +1,4 @@
-// Sample data for Shop Steady. Everything here is made up except the demo store's public name.
+// Sample data for Downtown Stube. Everything here is made up except the demo store's public name.
 // Replace with your own, or load from Supabase.
 window.APP_DATA = {
   TIMEZONE: 'America/Chicago',
