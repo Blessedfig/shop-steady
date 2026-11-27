@@ -7,6 +7,9 @@
 //            2. Sales: orders changed since the last run (Shopify allows the last 60 days), line by line.
 //   apply  (owner only): sends pending cost and vendor changes from shopify_changes to Shopify, one by one,
 //          and records what happened.
+//   online (owner only): switches products on or off for the Online Store channel to match the owner's rules
+//          (online-store.sql); online-undo reverses chosen changes. With the rules on "Run on its own", each
+//          product export is followed by the same step.
 // The access token lives only in shopify_conn (see supabase/shopify.sql) and in this function's memory.
 // "Verify JWT with legacy secret" must be OFF: the timer has no sign-in; this code checks the key or the person.
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -23,10 +26,15 @@ const json = (body: unknown, status = 200) =>
 const num = (gid: string | null | undefined) => gid ? Number(String(gid).split("/").pop()) : null;
 const sameText = (a: string, b: string) => { if (a.length !== b.length) return false; let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i); return d === 0; };
 
-const BULK = `{ productVariants { edges { node { id title sku barcode price
-  product { id title vendor productType status }
+// pub: the Online Store channel's publication id (online-store.sql); with it the export also says whether each
+// product is on the online store.
+const bulkQuery = (pub: string | null) => `{ productVariants { edges { node { id title sku barcode price
+  product { id title vendor productType status tags category { fullName } featuredMedia { id }${pub ? ` publishedOnPublication(publicationId: "${pub}")` : ""} }
   inventoryItem { id tracked unitCost { amount }
     inventoryLevels { edges { node { location { id } quantities(names: ["available", "on_hand"]) { name quantity } } } } } } } } }`;
+const PUBLISH = `mutation($id: ID!, $pub: ID!) { publishablePublish(id: $id, input: [{ publicationId: $pub }]) { userErrors { message } } }`;
+const UNPUBLISH = `mutation($id: ID!, $pub: ID!) { publishableUnpublish(id: $id, input: [{ publicationId: $pub }]) { userErrors { message } } }`;
+const TAGS_ADD = `mutation($id: ID!, $tags: [String!]!) { tagsAdd(id: $id, tags: $tags) { userErrors { message } } }`;
 const ORDERS = `query($q: String, $after: String) { shop { ianaTimezone }
   orders(first: 25, after: $after, query: $q, sortKey: UPDATED_AT) { pageInfo { hasNextPage endCursor }
     edges { node { id name createdAt updatedAt cancelledAt sourceName paymentGatewayNames
@@ -110,6 +118,32 @@ Deno.serve(async (req) => {
     return json({ applied: done, failed });
   }
 
+  // ---------- online store (owner): apply the rules now, or undo changes ----------
+  if (action === "online" || action === "online-undo") {
+    if (role !== "owner") return json({ error: "owner-only" }, 403);
+    const pub = await onlinePub();
+    if (!pub) return json({ error: "Connect Shopify again so the app may publish to the Online Store (Shopify page > Reconnect)." }, 409);
+    if (action === "online") return json(await applyOnline(pub, who, 0));
+    const ids: number[] = Array.isArray(body.ids) ? body.ids.map(Number).filter(Boolean).slice(0, 200) : [];
+    const { data: list } = await admin.from("online_changes").select("*").in("id", ids).eq("status", "applied");
+    let done = 0; const errs: string[] = [];
+    for (const c of list ?? []) {
+      try {
+        const gid = "gid://shopify/Product/" + c.product_id, show = c.action === "hide";
+        // the tag keeps the next run from switching it back
+        await gql(TAGS_ADD, { id: gid, tags: [show ? "online" : "not-online"] });
+        const d = await gql(show ? PUBLISH : UNPUBLISH, { id: gid, pub });
+        const e = (d[show ? "publishablePublish" : "publishableUnpublish"].userErrors ?? []).map((x: { message: string }) => x.message).join("; ");
+        if (e) throw new Error(e);
+        await admin.from("shopify_variants").update({ online: show }).eq("product_id", c.product_id);
+        await admin.from("online_changes").update({ status: "undone" }).eq("id", c.id);
+        done++;
+      } catch (e) { errs.push((e as Error).message); }
+    }
+    await log("online-undo", !errs.length, `${done} undone by ${who}` + (errs.length ? " · " + errs[0] : ""));
+    return json({ undone: done, failed: errs.length });
+  }
+
   // ---------- sync ----------
   const notes: string[] = [];
   let ok = true;
@@ -122,12 +156,15 @@ Deno.serve(async (req) => {
         const n = b.url ? await ingest(b.url) : 0;
         await admin.from("shopify_conn").update({ bulk_id: null, full_at: new Date().toISOString() }).eq("id", 1);
         notes.push(`${n} products and stock updated`);
+        const { data: rules } = await admin.from("online_rules").select("enabled,auto").eq("id", 1).maybeSingle();
+        const pub = rules?.enabled && rules?.auto ? await onlinePub() : null;
+        if (pub) { const r = await applyOnline(pub, "rules (on its own)", 45000); notes.push(`Online store: ${r.shown} shown, ${r.hidden} hidden` + (r.failed ? `, ${r.failed} failed` : "") + (r.left ? `, ${r.left} next run` : "")); }
       } else if (!b || ["FAILED", "CANCELED", "EXPIRED"].includes(b.status)) {
         await admin.from("shopify_conn").update({ bulk_id: null }).eq("id", 1);
         notes.push("Product export " + (b?.status ?? "missing") + (b?.errorCode ? " (" + b.errorCode + ")" : "")); ok = false;
       } else notes.push("Product export still running");
     } else if (!conn.full_at || Date.now() - new Date(conn.full_at).getTime() > 55 * 60 * 1000 || action === "full") {
-      const d = await gql(`mutation($q: String!) { bulkOperationRunQuery(query: $q) { bulkOperation { id status } userErrors { message } } }`, { q: BULK });
+      const d = await gql(`mutation($q: String!) { bulkOperationRunQuery(query: $q) { bulkOperation { id status } userErrors { message } } }`, { q: bulkQuery(await onlinePub()) });
       const r = d.bulkOperationRunQuery;
       if (r.userErrors?.length) { notes.push("Export not started: " + r.userErrors.map((e: { message: string }) => e.message).join("; ")); ok = false; }
       else { await admin.from("shopify_conn").update({ bulk_id: r.bulkOperation.id, bulk_started: new Date().toISOString() }).eq("id", 1); notes.push("Product export started"); }
@@ -163,6 +200,48 @@ Deno.serve(async (req) => {
   await log(action === "tick" ? "auto" : "sync", ok, notes.join(" · "));
   return json({ ok, notes });
 
+  // The Online Store channel's publication id, looked up once (needs the read_publications permission).
+  async function onlinePub(): Promise<string | null> {
+    if (conn.online_pub_id) return conn.online_pub_id;
+    if (!/read_publications/.test(conn.scope ?? "")) return null;
+    try {
+      const d = await gql(`{ publications(first: 30) { nodes { id name } } }`);
+      const p = (d.publications.nodes ?? []).find((x: { name: string }) => /^online store$/i.test(x.name));
+      if (!p) return null;
+      conn.online_pub_id = p.id;
+      await admin.from("shopify_conn").update({ online_pub_id: p.id }).eq("id", 1);
+      return p.id;
+    } catch { return null; }
+  }
+
+  // Switches products on or off for the Online Store where Shopify differs from the rules. Stops after per_run
+  // changes or the time budget (ms; 0 = 60 s), and records each one so the owner can undo it.
+  async function applyOnline(pub: string, by: string, budget: number) {
+    const t0 = Date.now(), limit = budget || 60000;
+    const { data: rules } = await admin.from("online_rules").select("per_run").eq("id", 1).maybeSingle();
+    const { data: rows, error } = await admin.rpc("online_plan_rows");
+    if (error) throw new Error(error.message);
+    // deno-lint-ignore no-explicit-any
+    const todo = (rows ?? []).filter((r: any) => r.online !== null && r.want !== r.online);
+    // hide first: those are the ones customers could wrongly order
+    // deno-lint-ignore no-explicit-any
+    todo.sort((a: any, b: any) => Number(a.want) - Number(b.want));
+    let shown = 0, hidden = 0, failed = 0, i = 0;
+    for (; i < todo.length && i < (rules?.per_run ?? 300) && Date.now() - t0 < limit; i++) {
+      const r = todo[i], gid = "gid://shopify/Product/" + r.product_id;
+      let err = "";
+      try {
+        const d = await gql(r.want ? PUBLISH : UNPUBLISH, { id: gid, pub });
+        err = (d[r.want ? "publishablePublish" : "publishableUnpublish"].userErrors ?? []).map((x: { message: string }) => x.message).join("; ");
+      } catch (e) { err = (e as Error).message; }
+      if (!err) { await admin.from("shopify_variants").update({ online: r.want }).eq("product_id", r.product_id); r.want ? shown++ : hidden++; } else failed++;
+      await admin.from("online_changes").insert({ product_id: r.product_id, title: r.title, action: r.want ? "show" : "hide", reason: r.reason,
+        status: err ? "failed" : "applied", error: err ? err.slice(0, 300) : null, by_whom: by });
+    }
+    await log("online", failed === 0, `${shown} shown, ${hidden} hidden, ${failed} failed, ${todo.length - i} left, by ${by}`);
+    return { shown, hidden, failed, left: todo.length - i };
+  }
+
   // reads the bulk export (one JSON object per line: variants, then their stock levels) into the tables
   async function ingest(fileUrl: string) {
     const text = await (await fetch(fileUrl)).text();
@@ -181,7 +260,9 @@ Deno.serve(async (req) => {
       vars.set(o.id, { variant_id: num(o.id), product_id: num(o.product?.id), inventory_item_id: num(ii.id),
         product_title: o.product?.title ?? "", variant_title: o.title ?? "", sku: (o.sku ?? "").replace(/^'/, ""), barcode: o.barcode ?? "",
         vendor: o.product?.vendor ?? "", product_type: o.product?.productType ?? "", status: o.product?.status ?? "",
-        price: o.price == null ? null : Number(o.price), tracked: !!ii.tracked, available: 0, on_hand: 0, updated_at: new Date().toISOString() });
+        price: o.price == null ? null : Number(o.price), tracked: !!ii.tracked, available: 0, on_hand: 0, updated_at: new Date().toISOString(),
+        tags: (o.product?.tags ?? []).join(", "), category: o.product?.category?.fullName ?? "", has_photo: !!o.product?.featuredMedia?.id,
+        online: typeof o.product?.publishedOnPublication === "boolean" ? o.product.publishedOnPublication : null });
       if (ii.id) costs.set(num(ii.id)!, ii.unitCost?.amount == null ? null : Number(ii.unitCost.amount));
     }
     const all = [...vars.values()];
