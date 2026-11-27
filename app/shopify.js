@@ -113,7 +113,7 @@
       h('p',{class:'small muted'}, 'Propose a new cost or vendor for an item. '+(isOwner() ? 'Nothing goes to Shopify until you tap Send to Shopify.' : 'The owner sends them to Shopify.')));
     const pending = list.filter(x => x.status === 'pending');
     if (list.length) c.append(h('div',{class:'list'}, list.map(x => h('div',{class:'item'},
-      h('span',{class:'small muted'}, h('b',null, x.kind === 'cost' ? 'Cost' : x.kind === 'vendor' ? 'Vendor' : 'Stock'), ' · '+(x.note || '#'+x.variant_id)+' · '+(x.created_by || '')),
+      h('span',{class:'small muted'}, h('b',null, ({cost:'Cost', vendor:'Vendor', stock:'Stock', barcode:'Barcode', price:'Price', type:'Product type', tracked:'Track stock'})[x.kind] || x.kind), ' · '+(x.note || '#'+x.variant_id)+' · '+(x.created_by || '')),
       h('p',null, (x.old_value ?? '—')+' → ', h('b',null, x.new_value)),
       x.status === 'failed' ? h('p',{class:'small'}, h('span',{class:'chip red'},'Failed'), ' '+(x.error || '')) : null,
       h('div',{class:'row'}, h('button',{class:'linkbtn small',type:'button',onclick:async()=>{ const r = await A.sb.from('shopify_changes').update({status:'dropped'}).eq('id',x.id); if (r.error) toast(r.error.message); A.route(); }},'Drop'))))));

@@ -24,6 +24,10 @@ jobs:
           node-version: 22
       - name: JavaScript syntax
         run: for f in shop-steady/app/*.js shop-steady/app/lib/*.js; do node --check "$f"; done
+      - name: Product fixer tests
+        run: |
+          node shop-steady/tests/fixrules-test.js
+          node --experimental-strip-types --no-warnings shop-steady/tests/product-fix-fn-test.mjs
       - name: Install checker
         run: |
           npm init -y >/dev/null

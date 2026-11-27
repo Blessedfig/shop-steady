@@ -13,6 +13,7 @@ Live test version: https://blessedfig.github.io/shop-steady/app/ (made-up sample
 - **Sign-in and roles:** invite-only sign-in (password or emailed code), stays signed in. Four role tiers (staff, shift lead, manager, owner); the owner switches each module on or off per role.
 - **Business types:** each location picks a type (bookstore, retail shop, café, services or rentals) under **Setup**. The type sets the role names and which modules start on. The owner can rename any role.
 - **Inventory and reorders:** stock by ISBN or SKU, low-stock flags, suggested orders grouped by supplier (CSV download), consignment and used copies.
+- **Product fixer:** every hour it checks every Shopify product and lines up fixes: missing ISBNs and barcodes (from the SKU, the title, a Faire order, or a Google Books / Open Library lookup), a Faire case or order total saved as the cost of one item, a missing or case-sized retail price, product type and stock tracking. Upload Faire order exports for exact costs. The owner approves fixes (or lets a rule fix on its own) before anything changes in Shopify; every fix can be undone. Setup: `supabase/PRODUCT-FIX.md`.
 - **Expenses:** receipt log by category and an owner spending card on Home.
 - Installable on phones (PWA), Android test build, accessibility and security checks on every change.
 
