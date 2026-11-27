@@ -10,7 +10,15 @@
   const MGR = ['lead','manager','owner'];
   const isMgr = () => MGR.includes(S().tier);
   const KINDS = {update:'Shift log update', customer:'Customer or guest', incident:'Incident', staff:'Employee file note', task:'Task not done', vendor:'Supplier or vendor'};
-  const PRIVATE = ['staff']; // employee file notes: managers and owners only
+  const PRIVATE = ['staff']; // employee file notes: store managers and owners only
+  // Employee file notes live in their own shared area, 'staffnotes', which only a store manager or the owner can read
+  // or save (supabase/staff-safety.sql). Other phones never receive them. A manager's device moves older ones over.
+  const canStaff = () => ['manager','owner'].includes(S().tier) && (A.demo || ['manager','owner'].includes(A.myRole));
+  const SN = () => { const s = S(); if (!Array.isArray(s.staffnotes)) s.staffnotes = []; return s.staffnotes; };
+  function moveStaff(){ const s = S(); if (!Array.isArray(s.notes) || !canStaff()) return;
+    const old = s.notes.filter(x => x && x.kind === 'staff'); if (!old.length) return;
+    const ids = new Set(SN().map(x => x.id)); old.forEach(x => { if (!ids.has(x.id)) SN().push(x); });
+    s.notes = s.notes.filter(x => !(x && x.kind === 'staff')); A.save(); }
 
   // ---------- basic tidy, used when AI help is not set up ----------
   const SHORT = [[/\bw\/o\b/gi,'without'],[/\bw\//gi,'with '],[/\bw (?=[a-z])/gi,'with '],[/\bb\/c\b/gi,'because'],[/\bcust\b/gi,'customer'],[/\bmgr\b/gi,'manager'],[/\bapprox\b\.?/gi,'approximately'],
@@ -72,7 +80,8 @@
 
   function view(v){
     v.append(head('Notes · '+A.site().name, 'Notes and logs', 'Jot it down the way you\'d say it, then tap Make it professional for a clean version for the record. Both are kept.'));
-    const kinds = Object.entries(KINDS).filter(([k]) => isMgr() || !PRIVATE.includes(k));
+    moveStaff();
+    const kinds = Object.entries(KINDS).filter(([k]) => canStaff() || !PRIVATE.includes(k));
     const text = h('textarea',{name:'text',rows:'4',maxlength:'4000',required:true,placeholder:'e.g. edna ate here, left w her guardian 3-5pm'});
     const f = h('form',{class:'card grid'},
       h('label',{class:'f'},'Type', h('select',{name:'kind'}, kinds.map(([k,t]) => h('option',{value:k},t)))),
@@ -83,20 +92,22 @@
       polishButton(text, () => { const d = new FormData(f); return {kind:d.get('kind'), about:d.get('about'), when:fmtWhen(d.get('when'))}; }),
       h('button',{class:'btn',type:'submit'},'Save note'));
     f.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(f), t = String(d.get('text')).trim(); if (!t) return;
-      N().unshift({id:uid(), site:S().site, at:new Date().toISOString(), when:String(d.get('when')), kind:String(d.get('kind')), about:String(d.get('about')||'').trim(), by:A.me(), text:t, original:text.dataset.original && text.dataset.original !== t ? text.dataset.original : ''});
-      if (N().length > 500) N().length = 500;
+      const L = d.get('kind') === 'staff' ? SN() : N();
+      L.unshift({id:uid(), site:S().site, at:new Date().toISOString(), when:String(d.get('when')), kind:String(d.get('kind')), about:String(d.get('about')||'').trim(), by:A.me(), text:t, original:text.dataset.original && text.dataset.original !== t ? text.dataset.original : ''});
+      if (L.length > 500) L.length = 500;
       A.save(); toast('Note saved'); A.route(); });
     v.append(f);
 
     const me = A.me();
-    let list = N().filter(x => x.site === S().site && (isMgr() ? true : (x.by === me && !PRIVATE.includes(x.kind))));
+    let list = [...N(), ...(canStaff() ? SN() : [])].filter(x => x.site === S().site && (PRIVATE.includes(x.kind) ? canStaff() : isMgr() || x.by === me))
+      .sort((a,b) => String(b.at).localeCompare(String(a.at)));
     const filt = h('input',{type:'search','aria-label':'Search notes',placeholder:'Search notes or a name'});
     const body = h('div',{class:'list'});
     const draw = () => { const q = filt.value.trim().toLowerCase(), rows = q ? list.filter(x => (x.text+' '+x.about+' '+x.by).toLowerCase().includes(q)) : list;
       body.replaceChildren(...(rows.length ? rows.slice(0,100).map(x => h('div',{class:'item'},
         h('span',{class:'small muted'}, KINDS[x.kind]+(x.about ? ' · '+x.about : '')+' · '+fmtWhen(x.when)+' · by '+x.by),
         h('p',null,x.text),
-        x.by === me && A.delivery ? A.delivery('notes', x) : null,
+        x.by === me && A.delivery ? A.delivery(x.kind === 'staff' ? 'staffnotes' : 'notes', x) : null,
         x.original ? h('details',{class:'small muted'}, h('summary',null,'Original words'), h('p',null,x.original)) : null,
         h('div',{class:'row'}, h('button',{class:'linkbtn small',type:'button',onclick:()=>A.copy(fmtWhen(x.when)+(x.about ? ' · '+x.about : '')+'\n'+x.text+'\n(Written by '+x.by+')')},'Copy for a report')))) : [h('p',{class:'muted'},'No notes yet.')])); };
     filt.addEventListener('input', draw); draw();

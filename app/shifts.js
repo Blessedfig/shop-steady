@@ -1,7 +1,7 @@
 // Shifts and staff: team list with pay rates and personal PINs, a weekly schedule, store mode (a shared tablet
 // that stays signed in and opens to a PIN pad), time clock, daily checklists, and timesheets with overtime.
 // Patterns from Steady Shift's schedule.js and time.js, rewritten small for shops (no care-home rules).
-// Test version: everything lives in this browser. PINs are stored only as salted SHA-256 hashes.
+// Signed in, PINs are checked by the database and never shared with phones (supabase/staff-safety.sql).
 (function(){
   const A = window.SSApp; if (!A) return;
   const {h, head, toast, money, download, toCsv, isoDay, addDays, uid} = A;
@@ -37,6 +37,24 @@
     const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('shop-steady:'+site+':'+pin));
     return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
   }
+  // Signed in, PINs are kept and checked by the database (supabase/staff-safety.sql): the shared schedule never
+  // holds them, and wrong guesses lock out. The demo keeps salted fingerprints in this browser.
+  const onServer = () => !A.demo && !!A.sb;
+  async function setPin(p, pin){ // 'ok', 'taken' or an error message
+    if (!/^\d{4,6}$/.test(pin)) return 'Use 4 to 6 digits';
+    if (!onServer()){ const hsh = await hashPin(S().site, pin); if (team().some(x => x !== p && x.pinHash === hsh)) return 'taken'; p.pinHash = hsh; return 'ok'; }
+    try { const {data, error} = await A.sb.rpc('set_pin', {p_site:S().site, p_person:p.id, p_pin:pin}); if (error) return error.message; return data === 'bad' ? 'Use 4 to 6 digits' : data; }
+    catch(e){ return 'You need to be online to set a PIN'; }
+  }
+  async function findByPin(pin){ // {p} or {msg}
+    if (!onServer()){ const hsh = await hashPin(S().site, pin), p = team().find(x => x.pinHash === hsh); return p ? {p} : {msg:'That PIN did not match. Try again.'}; }
+    let r; try { r = await A.sb.rpc('check_pin', {p_site:S().site, p_pin:pin}); } catch(e){ r = {error:e}; }
+    if (r.error) return {msg:'Could not check the PIN. The store tablet needs internet.'};
+    const d = r.data || {};
+    if (d.locked) return {msg:'Too many wrong PINs. Try again in '+Math.ceil(d.locked/60)+' min, or a manager can unlock it on the Team screen.'};
+    const p = d.id && team().find(x => x.id === d.id);
+    return p ? {p} : {msg:'That PIN did not match.'+(d.left && d.left < 3 ? ' '+d.left+' tries left before a short lockout.' : ' Try again.')};
+  }
   function seedShifts(site, team){
     const out = [], w0 = weekStart(isoDay(new Date()));
     const people = team.filter(p => p.tier !== 'owner');
@@ -67,7 +85,8 @@
     })();
     return ready;
   }
-  const X = () => { const x = S().shifts; movePay(x); return x; };
+  const X = () => { const x = S().shifts; movePay(x); dropPins(x); return x; };
+  function dropPins(x){ if (!onServer() || !x || !x.team) return; for (const site in x.team) (x.team[site]||[]).forEach(p => { if ('pinHash' in p) delete p.pinHash; }); }
   // ---------- pay rates live apart from the team list ----------
   // 'pay' is a shared area only a store manager or the owner can read (supabase/private-areas.sql), so staff phones
   // never receive anyone's rate. Each person still sees their own: the database matches their sign-in email.
@@ -168,14 +187,16 @@
   function teamView(v){
     v.append(head('People · '+A.site().name, 'Team, pay and PINs', 'Each person gets a 4 to 6 digit PIN for the store tablet. Only managers and owners see pay; each person can see their own on their Schedule. Photo proof stays off unless someone is not doing their checklist: then their ticks need a photo.'));
     if (!isMgr()){ v.append(h('div',{class:'card'},'Only managers and owners can change the team.')); return; }
-    ensure().then(() => {
+    ensure().then(async () => {
+      let pins = null;
+      if (onServer()) try { const r = await A.sb.rpc('pins_set', {p_site:S().site}); pins = r.error ? null : r.data || []; } catch(e){}
       v.append(h('div',{class:'card'}, h('h2',null,'Team'), h('div',{class:'list'}, team().map(p => h('div',{class:'item'},
         h('b',null,p.n), h('span',{class:'small muted'}, A.tierName(p.tier)+(rateOf(p) ? ' · '+money(rateOf(p))+'/h' : '')+(payOf(p).email ? ' · sees own pay as '+payOf(p).email : '')),
         h('div',{class:'row'},
           h('button',{class:'btn quiet sm',type:'button',onclick:async ()=>{ const pin = prompt('New PIN for '+p.n+' (4 to 6 digits)'); if (!pin) return;
-            if (!/^\d{4,6}$/.test(pin)) return toast('Use 4 to 6 digits');
-            const hsh = await hashPin(S().site, pin); if (team().some(x => x !== p && x.pinHash === hsh)) return toast('Someone already has that PIN');
-            p.pinHash = hsh; A.save(); toast('PIN changed'); }},'Change PIN'),
+            const r = await setPin(p, pin.trim()); if (r !== 'ok') return toast(r === 'taken' ? 'Someone already has that PIN' : r);
+            A.save(); toast('PIN changed'); A.route(); }}, onServer() && pins && !pins.includes(p.id) ? 'Set a PIN' : 'Change PIN'),
+          onServer() && pins && !pins.includes(p.id) ? h('span',{class:'chip amber'},'No PIN yet') : null,
           p.tier !== 'owner' ? h('button',{class:'btn quiet sm',type:'button','aria-pressed':String(!!p.photoProof),onclick:()=>{ p.photoProof = !p.photoProof; A.save(); toast(p.photoProof ? 'Photo proof is on for '+p.n : 'Photo proof is off'); A.route(); }}, p.photoProof ? 'Photo proof: on' : 'Photo proof: off') : null,
           p.tier !== 'owner' ? h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ const r = prompt('Hourly pay for '+p.n, String(rateOf(p)||'')); if (r == null) return; const n = parseFloat(r); if (!(n >= 0)) return toast('Type a number'); setPay(p, 'rate', n); A.save(); A.route(); }},'Change pay') : null,
           p.tier !== 'owner' ? h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ const r = prompt('The email '+p.n+' signs in with, so they can see their own hours and pay (leave empty to unlink)', payOf(p).email||''); if (r == null) return; const em = r.trim().toLowerCase();
@@ -188,10 +209,14 @@
         h('label',{class:'f'},'PIN (4 to 6 digits)', h('input',{type:'password',name:'pin',inputmode:'numeric',pattern:'\\d{4,6}',autocomplete:'off',required:true})),
         h('button',{class:'btn',type:'submit'},'Add to team'));
       f.addEventListener('submit', async e => { e.preventDefault(); const d = new FormData(f);
-        const hsh = await hashPin(S().site, d.get('pin')); if (team().some(x => x.pinHash === hsh)) return toast('Someone already has that PIN');
-        const np = {id:uid(), n:String(d.get('n')).trim(), tier:d.get('tier'), pinHash:hsh}; team().push(np);
+        const np = {id:uid(), n:String(d.get('n')).trim(), tier:d.get('tier')};
+        const r = await setPin(np, String(d.get('pin'))); if (r !== 'ok') return toast(r === 'taken' ? 'Someone already has that PIN' : r);
+        team().push(np);
         setPay(np, 'rate', +d.get('rate')||0); if (String(d.get('em')||'').trim()) setPay(np, 'email', String(d.get('em')).trim().toLowerCase()); A.save(); toast('Added'); A.route(); });
       v.append(f);
+      if (onServer()) v.append(h('div',{class:'card'}, h('h2',null,'Store tablet locked?'),
+        h('p',{class:'small muted'},'After 5 wrong PINs the tablet waits a few minutes, longer each time. PINs are checked by the server and nobody can read them, not even you.'),
+        h('button',{class:'btn quiet sm',type:'button',onclick:async()=>{ const r = await A.sb.rpc('clear_pin_locks'); toast(r.error ? r.error.message : 'Unlocked'); }},'Unlock PIN entry')));
     });
   }
 
@@ -256,8 +281,8 @@
       const who = S().kioskWho && Date.now() - S().kioskWho.at < 120000 ? S().kioskWho.n : null; // a tapped-in person stays for 2 minutes
       if (!who){
         v.append(h('div',{class:'card kioskcard'}, pinPad(async pin => {
-          const hsh = await hashPin(S().site, pin), p = team().find(x => x.pinHash === hsh);
-          if (!p) return toast('That PIN did not match. Try again.');
+          const {p, msg} = await findByPin(pin);
+          if (!p) return toast(msg);
           S().kioskWho = {n:p.n, at:Date.now()}; A.save(); A.route();
         }, 'Enter your PIN')));
         if (A.demo) v.append(h('p',{class:'small muted'},'Sample PINs: 1111 or 2222 staff, 3333 manager, 9999 owner.'));

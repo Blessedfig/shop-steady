@@ -19,6 +19,7 @@
     (vo.staff || []).forEach(x => out.push({key:'voice', x, at:x.at, kind:STAFF[x.kind] || 'Team voice', text:x.what, by:x.anon ? 'Anonymous' : x.by, href:'#/teamvoice'}));
     (vo.checkins || []).forEach(x => out.push({key:'voice', x, at:x.at, kind:'Check-in', text:(x.score ? 'Score '+x.score+'/5. ' : '')+(x.a || []).filter(Boolean).join(' · '), by:x.by || 'Anonymous', href:'#/teamvoice'}));
     (vo.cust || []).forEach(x => out.push({key:'voice', x, at:x.at, kind:CUST[x.kind] || 'Customer note', text:x.what, by:x.by, href:'#/custvoice'}));
+    (Array.isArray(s.staffnotes) ? s.staffnotes : []).forEach(x => out.push({key:'staffnotes', x, at:x.at, kind:NOTE[x.kind] || 'Note', text:(x.about ? x.about+': ' : '')+x.text, by:x.by, href:'#/notes'}));
     (s.notes || []).forEach(x => out.push({key:'notes', x, at:x.at, kind:NOTE[x.kind] || 'Note', text:(x.about ? x.about+': ' : '')+x.text, by:x.by, href:'#/notes'}));
     ((s.shifts && s.shifts.reports) || []).forEach(x => out.push({key:'shifts', x, at:x.at || x.date, kind:'Not done', text:x.task+(x.note ? ' · '+x.note : ''), by:x.by, href:'#/checklists'}));
     return out.filter(i => i.x && i.x.site === site && String(i.at||'') >= since).sort((a,b) => String(b.at).localeCompare(String(a.at)));
