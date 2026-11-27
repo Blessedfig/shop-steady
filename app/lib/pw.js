@@ -4,21 +4,21 @@
 (function(){
   const MIN = 10;
   const css = `
-  .sspw-back{position:fixed;inset:0;background:rgba(20,40,60,.45);display:grid;place-items:center;padding:16px;z-index:1000}
-  .sspw{background:#fff;color:#1F3A52;border-radius:18px;max-width:420px;width:100%;padding:1.4rem 1.3rem;display:grid;gap:.8rem;box-shadow:0 20px 50px -20px rgba(20,50,80,.5);font:inherit}
+  .sspw-back{position:fixed;inset:0;background:rgba(15,35,25,.45);display:grid;place-items:center;padding:16px;z-index:1000}
+  .sspw{background:#fff;color:#1A2A22;border-radius:18px;max-width:420px;width:100%;padding:1.4rem 1.3rem;display:grid;gap:.8rem;box-shadow:0 20px 50px -20px rgba(20,50,80,.5);font:inherit}
   .sspw h2{margin:0;font-size:1.25rem}
-  .sspw p{margin:0;font-size:.95rem;color:#5A6F80}
+  .sspw p{margin:0;font-size:.95rem;color:#56675E}
   .sspw label{display:grid;gap:.3rem;font-weight:700;font-size:.92rem}
   .sspw input{font:inherit;font-weight:400;padding:.7rem .8rem;border:1px solid #B9CDDD;border-radius:12px;min-height:44px;width:100%;box-sizing:border-box}
   .sspw .row{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center}
-  .sspw button{font:inherit;font-weight:700;border-radius:999px;min-height:44px;padding:.55rem 1.1rem;cursor:pointer;border:1px solid #1D6AA8}
-  .sspw .go{background:#1D6AA8;color:#fff}
-  .sspw .later{background:#fff;color:#1D6AA8}
-  .sspw .show{border:0;background:none;color:#1D6AA8;text-decoration:underline;padding:.3rem;min-height:auto;font-weight:600}
+  .sspw button{font:inherit;font-weight:700;border-radius:999px;min-height:44px;padding:.55rem 1.1rem;cursor:pointer;border:1px solid #1B4332}
+  .sspw .go{background:#1B4332;color:#fff}
+  .sspw .later{background:#fff;color:#1B4332}
+  .sspw .show{border:0;background:none;color:#1B4332;text-decoration:underline;padding:.3rem;min-height:auto;font-weight:600}
   .sspw .msg{font-size:.9rem;padding:.6rem .8rem;border-radius:10px;background:#FBF1E2;color:#7a4a0c}
   .sspw .ok{background:#E6F2EC;color:#1f5e43}
   .sspw-typo{font-size:.9rem;margin-top:.35rem;padding:.5rem .7rem;border-radius:10px;background:#FBF1E2;color:#7a4a0c;font-weight:400}
-  .sspw-typo button{font:inherit;font-weight:700;background:none;border:0;color:#1D6AA8;text-decoration:underline;cursor:pointer;padding:.2rem .3rem;min-height:32px}
+  .sspw-typo button{font:inherit;font-weight:700;background:none;border:0;color:#1B4332;text-decoration:underline;cursor:pointer;padding:.2rem .3rem;min-height:32px}
   .sspw-busy{opacity:.75;cursor:progress}
   .sspw-busy::after{content:"";width:1em;height:1em;margin-left:.5em;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;display:inline-block;vertical-align:-.15em;animation:sspw-spin .8s linear infinite}
   @keyframes sspw-spin{to{transform:rotate(360deg)}}

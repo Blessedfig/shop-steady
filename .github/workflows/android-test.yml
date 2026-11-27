@@ -56,5 +56,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view android-test >/dev/null 2>&1 || gh release create android-test --prerelease --title "Android test app" --notes "Test build of the Shop Steady app for Android. On your phone, download shop-steady-test.apk, open it, and allow installing from your browser when asked. It opens the live test app, so you only need to install it once."
+          gh release view android-test >/dev/null 2>&1 || gh release create android-test --prerelease --title "Android test app" --notes "Test build of the Downtown Stube app for Android. On your phone, download shop-steady-test.apk, open it, and allow installing from your browser when asked. It opens the live test app, so you only need to install it once."
           gh release upload android-test shop-steady-test.apk --clobber
