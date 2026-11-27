@@ -5,7 +5,8 @@
 //            1. Products and stock: a Shopify bulk export of every variant (title, codes, vendor, price, cost,
 //               available, on hand). It runs on Shopify's side; a later run collects it. Repeats hourly.
 //            2. Sales: orders changed since the last run (Shopify allows the last 60 days), line by line.
-//   apply  (owner only): sends pending cost and vendor changes from shopify_changes to Shopify, one by one,
+//   create (manager or owner): makes a Shopify product from a catalog title (Title search > Create in Shopify).
+//   apply  (owner only): sends pending price, cost and vendor changes from shopify_changes to Shopify, one by one,
 //          and records what happened.
 // The access token lives only in shopify_conn (see supabase/shopify.sql) and in this function's memory.
 // "Verify JWT with legacy secret" must be OFF: the timer has no sign-in; this code checks the key or the person.
@@ -77,7 +78,7 @@ Deno.serve(async (req) => {
   if (action === "apply") {
     if (role !== "owner") return json({ error: "owner-only" }, 403);
     const ids: number[] = Array.isArray(body.ids) ? body.ids.map(Number).filter(Boolean).slice(0, 200) : [];
-    let q = admin.from("shopify_changes").select("*").eq("status", "pending").in("kind", ["cost", "vendor"]).order("id").limit(200);
+    let q = admin.from("shopify_changes").select("*").eq("status", "pending").in("kind", ["cost", "vendor", "price"]).order("id").limit(200);
     if (ids.length) q = q.in("id", ids);
     const { data: list } = await q;
     let done = 0, failed = 0;
@@ -86,7 +87,16 @@ Deno.serve(async (req) => {
       let err = "";
       try {
         if (!v) err = "That item is not in the synced product list.";
-        else if (c.kind === "cost") {
+        else if (c.kind === "price") {
+          const price = Number(c.new_value);
+          if (!(price > 0 && price < 100000)) err = "Price must be a number above 0.";
+          else {
+            const d = await gql(`mutation($p: ID!, $v: [ProductVariantsBulkInput!]!) { productVariantsBulkUpdate(productId: $p, variants: $v) { userErrors { message } } }`,
+              { p: "gid://shopify/Product/" + v.product_id, v: [{ id: "gid://shopify/ProductVariant/" + c.variant_id, price: price.toFixed(2) }] });
+            err = (d.productVariantsBulkUpdate.userErrors ?? []).map((e: { message: string }) => e.message).join("; ");
+            if (!err) await admin.from("shopify_variants").update({ price }).eq("variant_id", c.variant_id);
+          }
+        } else if (c.kind === "cost") {
           const cost = Number(c.new_value);
           if (!(cost >= 0)) err = "Cost must be a number.";
           else {
@@ -108,6 +118,75 @@ Deno.serve(async (req) => {
     }
     await log("apply", failed === 0, `${done} applied, ${failed} failed, by ${who}`);
     return json({ applied: done, failed });
+  }
+
+  // ---------- create a product from a catalog title (manager or owner) ----------
+  // The title must already be in catalog_titles (Title search). One variant: ISBN as barcode, price, cost, tracked stock
+  // at 0 (Receiving or Shopify adds the copies). Publishes to Point of Sale, and to the Online Store unless pos_only.
+  if (action === "create") {
+    if (who === "timer") return json({ error: "manager-only" }, 403);
+    const key = String(body.item_key ?? "");
+    const { data: t } = await admin.from("catalog_titles").select("*").eq("item_key", key).maybeSingle();
+    if (!t) return json({ error: "That title is not in the catalog." }, 404);
+    const isbn = t.isbn13 as string | null;
+    const sku = isbn ?? key.replace(/^sku:/, "");
+    const { data: dup } = await admin.from("shopify_variants").select("product_id,product_title")
+      .or(isbn ? `barcode.eq.${isbn},sku.eq.${isbn}` : `sku.eq.${sku}`).limit(1);
+    if (dup?.length) return json({ error: `Already in Shopify as "${dup[0].product_title}".`, product_id: dup[0].product_id }, 409);
+    const price = Number(body.price), cost = body.cost == null || body.cost === "" ? null : Number(body.cost);
+    if (!(price > 0 && price < 10000)) return json({ error: "Enter a shelf price." }, 400);
+    if (cost != null && !(cost >= 0 && cost < 10000)) return json({ error: "Cost must be a number." }, 400);
+    const vendor = String(body.vendor || t.publisher || t.imprint || "").trim().slice(0, 255) || "Unknown";
+    const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const lines = [t.contributors ? `By ${t.contributors}` : "", [t.imprint || t.publisher, t.format, t.pub_date ? String(t.pub_date).slice(0, 4) : ""].filter(Boolean).join(" · "),
+      t.series ? `Series: ${t.series}` : "", t.pages ? `${t.pages} pages` : ""].filter(Boolean);
+    const html = (t.description ? `<p>${esc(String(t.description)).replace(/\n+/g, "</p><p>")}</p>` : "") + (lines.length ? `<p>${lines.map(esc).join("<br>")}</p>` : "");
+    const cover = t.cover_url && /^https:\/\//.test(t.cover_url) ? t.cover_url : isbn ? `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg?default=false` : null;
+    const tags = [t.product_class, t.format, t.series ? "series:" + t.series : null, body.special_order ? "special order" : null]
+      .filter(Boolean).map((x) => String(x).slice(0, 40));
+    const input: Record<string, unknown> = {
+      title: (t.title + (t.subtitle ? ": " + t.subtitle : "")).slice(0, 255),
+      descriptionHtml: html, vendor, productType: String(t.product_class || t.format || "Book").slice(0, 255),
+      status: body.status === "DRAFT" ? "DRAFT" : "ACTIVE", tags,
+      productOptions: [{ name: "Title", values: [{ name: "Default Title" }] }],
+      variants: [{ optionValues: [{ optionName: "Title", name: "Default Title" }], price: price.toFixed(2), sku,
+        ...(isbn ? { barcode: isbn } : {}),
+        inventoryItem: { tracked: true, requiresShipping: true, ...(cost != null ? { cost: cost.toFixed(2) } : {}) } }],
+    };
+    if (cover) input.files = [{ originalSource: cover, contentType: "IMAGE", alt: String(t.title).slice(0, 200) }];
+    let made;
+    try {
+      const d = await gql(`mutation($input: ProductSetInput!) { productSet(synchronous: true, input: $input) {
+        product { id title status variants(first: 1) { nodes { id inventoryItem { id } } } } userErrors { field message } } }`, { input });
+      const errs = (d.productSet.userErrors ?? []).map((e: { message: string }) => e.message).join("; ");
+      if (errs || !d.productSet.product) throw new Error(errs || "Shopify did not create the product.");
+      made = d.productSet.product;
+    } catch (e) {
+      await log("create", false, `${key}: ${(e as Error).message}`);
+      return json({ error: (e as Error).message }, 502);
+    }
+    const variant = made.variants.nodes[0];
+    const row = { variant_id: num(variant.id), product_id: num(made.id), inventory_item_id: num(variant.inventoryItem.id),
+      product_title: made.title, variant_title: "Default Title", sku, barcode: isbn, vendor, product_type: input.productType,
+      status: made.status, price, tracked: true, available: 0, on_hand: 0, updated_at: new Date().toISOString() };
+    await admin.from("shopify_variants").upsert(row);
+    if (cost != null) await admin.from("shopify_costs").upsert({ inventory_item_id: row.inventory_item_id, cost, updated_at: new Date().toISOString() });
+    if (body.vendor_id) await admin.from("vendor_aliases").upsert({ shopify_vendor: vendor, vendor_id: String(body.vendor_id) }, { onConflict: "shopify_vendor", ignoreDuplicates: true });
+    // sales channels: needs the read/write_publications permission (added Nov 2026; reconnect Shopify once if missing)
+    let channels = "";
+    try {
+      const p = await gql(`{ publications(first: 20) { nodes { id name } } }`);
+      const want = (p.publications.nodes as { id: string; name: string }[])
+        .filter((x) => /point of sale/i.test(x.name) || (!body.pos_only && /online store/i.test(x.name)));
+      if (want.length) {
+        const r = await gql(`mutation($id: ID!, $input: [PublicationInput!]!) { publishablePublish(id: $id, input: $input) { userErrors { message } } }`,
+          { id: made.id, input: want.map((x) => ({ publicationId: x.id })) });
+        const pe = (r.publishablePublish.userErrors ?? []).map((e: { message: string }) => e.message).join("; ");
+        channels = pe ? "not added to sales channels: " + pe : "on " + want.map((x) => x.name).join(" and ");
+      }
+    } catch (_) { channels = "not added to sales channels (connect Shopify again to allow it)"; }
+    await log("create", true, `Created ${made.title} (${sku}) by ${who}; ${channels}`);
+    return json({ created: true, product_id: row.product_id, variant_id: row.variant_id, admin_url: `https://${conn.shop}/admin/products/${row.product_id}`, channels });
   }
 
   // ---------- sync ----------

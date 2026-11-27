@@ -24,6 +24,8 @@ jobs:
           node-version: 22
       - name: JavaScript syntax
         run: for f in shop-steady/app/*.js shop-steady/app/lib/*.js; do node --check "$f"; done
+      - name: Catalog file readers
+        run: node shop-steady/tests/catalog-test.js
       - name: Install checker
         run: |
           npm init -y >/dev/null

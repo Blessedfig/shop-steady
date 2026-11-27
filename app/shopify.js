@@ -113,7 +113,7 @@
       h('p',{class:'small muted'}, 'Propose a new cost or vendor for an item. '+(isOwner() ? 'Nothing goes to Shopify until you tap Send to Shopify.' : 'The owner sends them to Shopify.')));
     const pending = list.filter(x => x.status === 'pending');
     if (list.length) c.append(h('div',{class:'list'}, list.map(x => h('div',{class:'item'},
-      h('span',{class:'small muted'}, h('b',null, x.kind === 'cost' ? 'Cost' : x.kind === 'vendor' ? 'Vendor' : 'Stock'), ' · '+(x.note || '#'+x.variant_id)+' · '+(x.created_by || '')),
+      h('span',{class:'small muted'}, h('b',null, x.kind === 'cost' ? 'Cost' : x.kind === 'price' ? 'Price' : x.kind === 'vendor' ? 'Vendor' : 'Stock'), ' · '+(x.note || '#'+x.variant_id)+' · '+(x.created_by || '')),
       h('p',null, (x.old_value ?? '—')+' → ', h('b',null, x.new_value)),
       x.status === 'failed' ? h('p',{class:'small'}, h('span',{class:'chip red'},'Failed'), ' '+(x.error || '')) : null,
       h('div',{class:'row'}, h('button',{class:'linkbtn small',type:'button',onclick:async()=>{ const r = await A.sb.from('shopify_changes').update({status:'dropped'}).eq('id',x.id); if (r.error) toast(r.error.message); A.route(); }},'Drop'))))));
@@ -142,18 +142,20 @@
     }
     function item(x, cost){
       const name = x.product_title+(x.variant_title && x.variant_title !== 'Default Title' ? ' · '+x.variant_title : '');
+      const pi = h('input',{type:'number',step:'0.01',min:'0.01',placeholder:'New price',style:'max-width:8rem'});
       const ci = h('input',{type:'number',step:'0.01',min:'0',placeholder:'New cost',style:'max-width:8rem'}), vi = h('input',{type:'text',placeholder:'New vendor',style:'max-width:12rem'});
       const add = async (kind, oldv, newv) => { if (newv === '' || newv == null) return toast('Type the new '+kind+' first');
         const r = await A.sb.from('shopify_changes').insert({kind, variant_id:x.variant_id, old_value:oldv == null ? null : String(oldv), new_value:String(newv), note:name});
         if (r.error) toast(r.error.message); else { toast('Waiting for the owner'); A.route(); } };
       return h('div',{class:'item'}, h('b',null,name), h('span',{class:'small muted'}, ' '+(x.vendor || 'no vendor')+' · price '+money(x.price)+' · cost '+(cost != null ? money(cost) : 'none')+' · '+(x.available ?? '—')+' left'),
+        h('div',{class:'row'}, pi, h('button',{class:'btn quiet sm',type:'button',onclick:()=>add('price', x.price, pi.value)},'Propose price')),
         h('div',{class:'row'}, ci, h('button',{class:'btn quiet sm',type:'button',onclick:()=>add('cost', cost, ci.value)},'Propose cost')),
         h('div',{class:'row'}, vi, h('button',{class:'btn quiet sm',type:'button',onclick:()=>add('vendor', x.vendor, vi.value.trim())},'Propose vendor')));
     }
     return h('div',null, q, out);
   }
 
-  A.register({id:'shopify', name:'Shopify live sync', what:'Sales and stock from Shopify every 15 minutes, top sellers, what to reorder, stock value, and cost and vendor changes that go to Shopify after the owner approves.', tiers:['manager','owner'],
+  A.register({id:'shopify', name:'Shopify live sync', what:'Sales and stock from Shopify every 15 minutes, top sellers, what to reorder, stock value, and price, cost and vendor changes that go to Shopify after the owner approves.', tiers:['manager','owner'],
     views:{shopify:{t:'Shopify', ic:'🛍️', render, min:'manager'}}});
   A.ownerHooks.push(v => { if (A.demo || !A.sb) return; const c = h('div',{class:'card'}, h('h2',null,'Shopify'), h('p',{class:'muted small'},'Checking…')); v.append(c);
     A.sb.rpc('shopify_status').then(({data:s}) => { c.lastChild.remove();
