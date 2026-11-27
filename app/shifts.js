@@ -248,6 +248,7 @@
           open ? h('button',{class:'btn ghost',type:'button',onclick:()=>{ open.brk = (open.brk||0) + 30; A.save(); toast('30-minute unpaid break added'); A.route(); }},'Add 30 min break') : null,
           h('button',{class:'btn quiet',type:'button',onclick:()=>{ S().kioskWho = null; A.save(); A.route(); }},'Done')));
       v.append(card, checklistCard(who));
+      if (A.quickLog) v.append(A.quickLog());
       if (p && MGR.includes(p.tier)) v.append(h('div',{class:'card soft'}, h('b',null,'Manager options'),
         h('div',{class:'row'}, h('button',{class:'btn ghost sm',type:'button',onclick:()=>{ setKiosk(false); S().kioskWho = null; A.save(); A.go('home'); }},'Leave store mode on this device'))));
     });
