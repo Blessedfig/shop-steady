@@ -57,6 +57,7 @@
         (x.contact || x.email || x.phone) ? h('p',{class:'small'}, 'Contact: '+[x.contact,x.email,x.phone].filter(Boolean).join(' · ')) : null,
         x.notes ? h('p',{class:'small'}, x.notes) : null);
       if (canEdit()){
+        const vn = h('textarea',{name:'notes',rows:'2',maxlength:'600'}, x.notes);
         const f = h('form',{class:'grid g2'},
           h('label',{class:'f'},'Status', h('select',{name:'status'}, STATUS.map(s => h('option',{selected:s===x.status},s)))),
           h('label',{class:'f'},'Lead time (days)', h('input',{type:'number',name:'lead',min:'0',value:String(x.lead||'')})),
@@ -64,7 +65,7 @@
           h('label',{class:'f'},'Contact email', h('input',{type:'email',name:'email',value:x.email,maxlength:'80'})),
           h('label',{class:'f'},'Contact phone', h('input',{type:'tel',name:'phone',value:x.phone,maxlength:'30'})),
           h('label',{class:'f'},'Order minimum', h('input',{type:'text',name:'min',value:x.min,maxlength:'40'})),
-          h('label',{class:'f'},'Notes', h('input',{type:'text',name:'notes',value:x.notes,maxlength:'200'})),
+          h('label',{class:'f'},'Notes', vn), A.polishButton ? A.polishButton(vn, {kind:'vendor', about:x.name}) : null,
           h('button',{class:'btn sm',type:'submit'},'Save'));
         f.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(f); ['status','contact','email','phone','min','notes'].forEach(k => x[k] = String(d.get(k)||'').trim()); x.lead = +d.get('lead')||0; A.save(); toast('Saved'); A.route(); });
         card.append(h('details',null, h('summary',null,'Edit'), f));
@@ -109,12 +110,13 @@
         c.orders.length ? h('div',{class:'list'}, c.orders.map(o => h('div',{class:'item'}, h('b',null,o.item), h('span',{class:'small muted'}, o.ven+' · '+money(o.price)+' · '+A.fmtDate(o.at)),
           h('div',{class:'row'}, ['To order','Ordered','Arrived, customer told','Picked up'].map(st => h('button',{class:'btn sm '+(o.status===st?'':'quiet'),type:'button','aria-pressed':String(o.status===st),onclick:()=>{ o.status = st; A.save(); A.route(); }}, st)))))) : null);
       if (canEdit()){
+        const cn = h('textarea',{name:'notes',rows:'2',maxlength:'600'}, c.notes);
         const f = h('form',{class:'grid g2'},
           h('label',{class:'f'},'Email', h('input',{type:'email',name:'email',value:c.email,maxlength:'80'})),
           h('label',{class:'f'},'Phone', h('input',{type:'tel',name:'phone',value:c.phone,maxlength:'30'})),
           h('label',{class:'f'},'Birthday (month and day)', h('input',{type:'text',name:'bday',value:c.bday,placeholder:'MM-DD',pattern:'\\d{2}-\\d{2}',maxlength:'5'})),
           h('label',{class:'f'},'Likes', h('input',{type:'text',name:'likes',value:c.likes,maxlength:'160'})),
-          h('label',{class:'f'},'Notes', h('input',{type:'text',name:'notes',value:c.notes,maxlength:'200'})),
+          h('label',{class:'f'},'Notes', cn), A.polishButton ? A.polishButton(cn, {kind:'customer', about:c.n}) : null,
           h('label',{class:'checkrow'}, h('input',{type:'checkbox',name:'consent',checked:c.consent}), 'They said yes to offers and news'),
           h('button',{class:'btn sm',type:'submit'},'Save'));
         f.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(f); ['email','phone','bday','likes','notes'].forEach(k => c[k] = String(d.get(k)||'').trim()); c.consent = !!d.get('consent'); A.save(); toast('Saved'); A.route(); });

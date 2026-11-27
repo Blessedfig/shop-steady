@@ -239,6 +239,9 @@ textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:.6re
 .camview{width:100%;max-width:420px;border-radius:12px;background:#000}
 .checkline{display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap}
 img.proof{max-width:260px;width:100%;border-radius:12px;border:1px solid var(--line)}
+.card.inset{background:var(--sky-soft);box-shadow:none;border:1px dashed var(--line-strong);margin-top:.5rem}
+.polish{display:grid;gap:.4rem}
+.msg.big{font-size:1.15rem;font-weight:600;min-height:3.2rem}
 
 /* Downtown Stube "Supper Club" look: pine bar with a mustard wordmark, brandy section labels.
    Contrast: white on pine 11:1, mustard on pine 6.6:1, #DCE8E0 on pine 9:1, brandy on sage 5.3:1. */
