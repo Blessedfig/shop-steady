@@ -47,7 +47,7 @@ jobs:
         run: ./gradlew assembleDebug --no-daemon
       - name: Rename
         run: cp android/app/build/outputs/apk/debug/app-debug.apk shop-steady-test.apk
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: shop-steady-test-apk
           path: mobile/shop-steady-test.apk
