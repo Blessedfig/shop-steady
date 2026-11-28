@@ -81,7 +81,7 @@
     v.append(f);
     const rows = here().slice(0, 60);
     v.append(h('div',{class:'card'}, h('h2',null,'Shipments'), rows.length ? h('div',{class:'list'}, rows.map(x => { const exp = x.lines.reduce((a,l) => a + (l.qty||0), 0), got = x.lines.reduce((a,l) => a + (l.got||0), 0);
-      return h('a',{class:'item',href:'#/shipment/'+x.id}, h('b',null, x.ven+(x.ref ? ' · '+x.ref : '')), h('span',{class:'small muted'}, STATUS[x.status]+' · '+x.lines.length+' lines · '+got+' of '+exp+' received · '+A.fmtDate(x.at)+(x.eta && x.status === 'ordered' ? ' · expected '+A.fmtDate(x.eta) : ''))); })) : h('p',{class:'muted'},'No shipments yet.')));
+      return h('a',{class:'item',href:'#/shipment/'+x.id}, h('b',null, x.ven+(x.ref ? ' · '+x.ref : '')), h('span',{class:'small muted'}, STATUS[x.status]+' · '+x.lines.length+' lines · '+got+' of '+exp+' received · '+A.fmtDate(x.at)+(x.eta && x.status === 'ordered' ? ' · expected '+A.fmtDate(x.eta) : '')+(x.claimBy && !x.claimed ? ' · claim by '+A.fmtDate(x.claimBy) : ''))); })) : h('p',{class:'muted'},'No shipments yet.')));
     v.append(h('div',{class:'card soft'}, h('h2',null,'Getting orders in'), h('ul',{class:'small'},
       h('li',null,'Penguin Random House and other publishers: save the invoice or packing slip PDF from the email or portal and add it to the shipment. A phone photo of the paper slip works too.'),
       h('li',null,'Faire: open the order and download its invoice or packing slip, or export orders as CSV, then add the file.'),
@@ -145,18 +145,38 @@
       const toExp = h('input',{type:'checkbox',checked:showCost});
       v.append(h('div',{class:'card grid'}, h('h2',null,'3. Finish'),
         showCost ? h('label',{class:'checkrow'}, toExp, 'Add this invoice to Expenses (Inventory purchases)') : null,
-        h('p',{class:'small muted'},'Short or damaged items: contact the vendor for a credit. Damaged stock can be logged under Tax records as a write-off.'),
+        h('p',{class:'small muted'},'Short or damaged items: contact the vendor for a credit. Freight claims for hidden damage or shortages are usually due within 5 days, so the app sets a claim date. Keep the box and take photos. Damaged stock can be logged under Tax records as a write-off.'),
         h('button',{class:'btn',type:'button',onclick:()=>{ if (!x.lines.some(l => l.got)) return toast('Nothing has been checked in yet');
           finish(x, showCost && toExp.checked); A.save(); toast('Checked in'); A.route(); }},'Check in shipment')));
     }
+    if (x.status === 'done' && x.claimBy) v.append(claimCard(x));
     if (x.status === 'done') v.append(h('div',{class:'card grid'}, h('h2',null,'Update Shopify'),
       h('p',{class:'small muted'},'Download a file that adds the good copies to your Shopify counts. It uses the inventory export loaded under Stock count, so load a fresh one first if it is old.'),
       h('div',{class:'row'}, h('button',{class:'btn',type:'button',onclick:()=>shopifyFile(x, cat)},'Download Shopify file'),
         h('button',{class:'btn ghost sm',type:'button',onclick:()=>download('received-'+(x.ven+'-'+(x.ref||x.at)).replace(/\W+/g,'-').toLowerCase()+'.csv','text/csv',toCsv([['Code','Title','Ordered','Received','Damaged','Cost each'], ...x.lines.map(l => [l.code,l.t,l.qty||0,l.got||0,l.bad||0,l.cost == null ? '' : l.cost])]))},'Download received list'))));
   }
 
+  // Vendor and freight claims (ABA/PartnerShip guidance): hidden damage or shortage within 5 days of delivery;
+  // publisher billing and shipping claims often within 60 days (Hachette 2024 terms). We remind at the shorter one.
+  const CLAIM_DAYS = 5;
+  const problems = x => x.lines.reduce((a,l) => ({short:a.short + Math.max(0,(l.qty||0)-(l.got||0)), bad:a.bad + (l.bad||0), extra:a.extra + Math.max(0,(l.got||0)-(l.qty||0))}), {short:0, bad:0, extra:0});
+  function claimCard(x){
+    const p = problems(x), left = Math.round((new Date(x.claimBy+'T12:00:00') - new Date(isoDay(new Date())+'T12:00:00')) / 864e5);
+    const card = h('div',{class:'card grid'}, h('h2',null, x.claimed ? 'Claim sent' : 'Claim with the vendor'),
+      h('p',null, [p.short ? p.short+' short' : '', p.bad ? p.bad+' damaged' : '', p.extra ? p.extra+' extra (tell them, so you aren\'t billed twice)' : ''].filter(Boolean).join(' · ')),
+      x.claimed ? h('p',{class:'small muted'}, 'Sent '+A.fmtDate(x.claimed.at.slice(0,10))+' by '+x.claimed.by+(x.claimed.note ? ' · '+x.claimed.note : ''))
+        : h('p',null, h('span',{class:'chip '+(left < 0 ? 'red' : left <= 2 ? 'amber' : '')}, left < 0 ? 'Claim date passed '+A.fmtDate(x.claimBy) : 'Claim by '+A.fmtDate(x.claimBy)+' ('+left+' day'+(left===1?'':'s')+' left)')));
+    if (!x.claimed && can(LEAD)){
+      const f = h('form',{class:'row'}, h('input',{type:'text',name:'n',maxlength:'140','aria-label':'Claim note',placeholder:'Who you contacted, claim number'}), h('button',{class:'btn sm',type:'submit'},'Mark claim sent'));
+      f.addEventListener('submit', e => { e.preventDefault(); x.claimed = {at:new Date().toISOString(), by:A.me(), note:String(new FormData(f).get('n')||'').trim()}; A.save(); toast('Claim marked as sent'); A.route(); });
+      card.append(f, h('p',{class:'small muted'},'Include the order number, the lines, and your photos. Credit usually comes on a later invoice.'));
+    }
+    return card;
+  }
+
   function finish(x, toExp){
     x.status = 'done'; x.doneAt = new Date().toISOString(); x.doneBy = A.me();
+    { const p = problems(x); if (p.short || p.bad || p.extra) x.claimBy = A.addDays(isoDay(new Date()), CLAIM_DAYS); }
     // remember cost and vendor per code for reorders and special-order quotes
     const s = S(); s.costs = s.costs || {};
     x.lines.forEach(l => { if (l.code && l.cost != null) s.costs[norm(l.code)] = {cost:l.cost, ven:x.ven, at:isoDay(new Date())}; });
@@ -178,6 +198,9 @@
 
   A.register({id:'receiving', name:'Receiving', what:'Track orders from publishers, Faire, Amazon and others; read invoices and packing slips; check shipments in and update Shopify counts.', tiers:['lead','manager','owner'],
     views:{receiving:{t:'Receiving', ic:'📦', render:list}, shipment:{t:'Shipment', ic:'📦', render:shipment, hidden:true}}});
-  A.ownerHooks.push(v => { const open = here().filter(x => x.status !== 'done'); if (!open.length) return;
-    v.append(h('div',{class:'card'}, h('h2',null,'Shipments'), h('p',null, open.length+' not checked in yet'), h('a',{href:'#/receiving'},'Open Receiving'))); });
+  A.ownerHooks.push(v => { const open = here().filter(x => x.status !== 'done'), claims = here().filter(x => x.status === 'done' && x.claimBy && !x.claimed);
+    if (!open.length && !claims.length) return;
+    v.append(h('div',{class:'card'}, h('h2',null,'Shipments'), open.length ? h('p',null, open.length+' not checked in yet') : null,
+      claims.map(x => h('p',null, h('a',{href:'#/shipment/'+x.id}, x.ven+(x.ref ? ' '+x.ref : '')), ': vendor claim due '+A.fmtDate(x.claimBy))),
+      h('a',{href:'#/receiving'},'Open Receiving'))); });
 })();

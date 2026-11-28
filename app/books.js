@@ -261,7 +261,10 @@
     try { const c = await compute(curYear()); box.replaceChildren(); await body(box, c); box.append(NOTADVICE); }
     catch(e){ box.replaceChildren(card('Could not load the books', h('p',null, String(e.message || e)), /books_|relation|function/.test(e.message||'') ? h('p',{class:'small'},'Run supabase/books.sql once in the Supabase SQL editor (owner).') : null)); }
   }
-  async function saveY(c, f){ f(c.Y); delete c.Y.linked; await DB.saveYear(c.y, c.Y); A.route(); }
+  // Saves the year; on a failure it says why and redraws from the server copy. True when saved.
+  async function saveY(c, f){ f(c.Y); delete c.Y.linked;
+    try { await DB.saveYear(c.y, c.Y); } catch(e){ toast('Could not save: ' + ((e && e.message) || e)); A.route(); return false; }
+    A.route(); return true; }
 
   // ---------- Tax year ----------
   function overview(box, c){
@@ -270,7 +273,7 @@
       h('div',{class:'grid g3'}, stat(money(c.salesTotal), 'Sales (before sales tax)'), stat(money(c.cogs), 'Cost of goods sold'), stat(money(c.deductions), 'Other write-offs'),
         stat(money(c.profit), 'Estimated profit', c.profit >= 0 ? 'good' : 'warnc'), stat(money(c.deductions * c.rate), 'Tax the write-offs save (about)'), stat(money(set), 'Set aside for tax (about)')),
       h('p',{class:'small muted'},'Tax figures use '+Math.round(c.rate*100)+'% for self-employment, federal and Wisconsin tax together. Ask your accountant for your own rate and change it here:'),
-      h('form',{class:'row',onsubmit:async e=>{ e.preventDefault(); const r = +new FormData(e.target).get('r'); if (!(r >= 0 && r <= 60)) return toast('Use a percent between 0 and 60'); await saveY(c, Y => Y.rate = r/100); toast('Saved'); }},
+      h('form',{class:'row',onsubmit:async e=>{ e.preventDefault(); const r = +new FormData(e.target).get('r'); if (!(r >= 0 && r <= 60)) return toast('Use a percent between 0 and 60'); if (await saveY(c, Y => Y.rate = r/100)) toast('Saved'); }},
         h('label',{class:'f'},'Combined tax rate (%)', h('input',{type:'number',name:'r',min:'0',max:'60',step:'0.5',value:String(Math.round(c.rate*1000)/10)})), h('button',{class:'btn sm',type:'submit'},'Save')),
       c.monthsMissing.length ? h('p',{class:'small'},'⚠ No sales yet for '+c.monthsMissing.map(m => m.n).join(', ')+'. Type or import them under Sales by month.') : null,
       c.salesErr ? h('p',{class:'small'},'⚠ Shopify sales could not be read: '+c.salesErr) : null,
@@ -286,7 +289,7 @@
     const fi = h('input',{type:'file',accept:'.csv,text/csv','aria-label':'Shopify sales report CSV'});
     fi.addEventListener('change', async () => { const f = fi.files[0]; if (!f) return;
       try { const got = shopifyMonths(await f.text(), ys); const n = Object.keys(got).length; if (!n) throw new Error('No '+ys+' months with a Net sales column found in that file.');
-        await saveY(c, Y => { Y.salesTyped = Object.assign(Y.salesTyped || {}, got); }); toast(n+' months imported'); } catch(e){ toast(e.message); } });
+        if (await saveY(c, Y => { Y.salesTyped = Object.assign(Y.salesTyped || {}, got); })) toast(n+' months imported'); } catch(e){ toast(e.message); } });
     box.append(card('Sales by month (from your POS)',
       h('p',{class:'small muted'},'Synced: Shopify sales after discounts, before sales tax, since the sync started. Typed: your own number for a month, which wins. For months before the sync, or to match Shopify exactly with returns, use Shopify Analytics > Reports > "Sales over time" by month, export it, and import it here.'),
       tbl(['Month','Synced','Typed (wins)','Stock bought','Other costs','Loan payments','Cash left'], rows),
@@ -312,7 +315,7 @@
     const y = c.y;
     const inp = (name, val, label) => h('label',{class:'f'}, label, h('input',{type:'number',name,step:'0.01',min:'0',value:val != null ? String(val) : ''}));
     const f = h('form',{class:'row',onsubmit:async e=>{ e.preventDefault(); const d = new FormData(f), b = d.get('beg'), en = d.get('end');
-      await saveY(c, Y => { Y.begInv = b === '' ? null : +b; Y.endInv = en === '' ? null : +en; }); toast('Saved'); }},
+      if (await saveY(c, Y => { Y.begInv = b === '' ? null : +b; Y.endInv = en === '' ? null : +en; })) toast('Saved'); }},
       inp('beg', c.Y.begInv, 'Inventory Jan 1 (blank = automatic)'), inp('end', c.Y.endInv, 'Inventory Dec 31 (blank = automatic)'), h('button',{class:'btn sm',type:'submit'},'Save'));
     const row = (l, v, note) => h('tr',null, h('td',null,l), h('td',null, v == null ? '—' : money(v)), h('td',{class:'small muted'}, note || ''));
     box.append(card('Cost of goods sold (inventory)',
@@ -376,7 +379,7 @@
         stat(money(left), 'Cash left per month'+(draws ? ' after '+money(draws)+' owner draws' : ''), left >= 0 ? 'good' : 'warnc'),
         margin != null ? stat(money(fixed / Math.max(margin, 0.01)), 'Sales needed to break even (at '+pct(margin,1)+' margin)') : null,
         cashIn != null && left < 0 ? stat((cashIn / -left).toFixed(1)+' months', 'Until '+money(cashIn)+' runs out at this rate', 'warnc') : null),
-      h('form',{class:'row',onsubmit:async e=>{ e.preventDefault(); const v = new FormData(e.target).get('c'); await saveY(c, Y => Y.cash = v === '' ? null : +v); toast('Saved'); }},
+      h('form',{class:'row',onsubmit:async e=>{ e.preventDefault(); const v = new FormData(e.target).get('c'); if (await saveY(c, Y => Y.cash = v === '' ? null : +v)) toast('Saved'); }},
         h('label',{class:'f'},'Cash in the business account now (optional, for runway)', h('input',{type:'number',name:'c',step:'0.01',min:'0',value:cashIn != null ? String(cashIn) : ''})), h('button',{class:'btn sm',type:'submit'},'Save'))));
   }
   function limits(box, c){

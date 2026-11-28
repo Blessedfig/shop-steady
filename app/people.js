@@ -28,6 +28,7 @@
     const site = S().site;
     if (!s.people.vendors[site]){ const list = (A.site().type === 'bookstore' ? BOOK_VENDORS : []).concat(GENERAL_VENDORS);
       s.people.vendors[site] = list.map(v => Object.assign({id:uid(), status:'Applying', contact:'', email:'', phone:'', min:'', notes:''}, v)); }
+    if (!s.people.customers[site] && !A.demo){ s.people.customers[site] = []; }
     if (!s.people.customers[site]){ const d = isoDay(new Date());
       s.people.customers[site] = [
         {id:uid(), n:'Sample Customer A', email:'', phone:'', bday:addDays(d,9).slice(5), likes:'Manga (shonen), fantasy', consent:true, notes:'Prefers a text when orders arrive (sample)', orders:[], since:addDays(d,-200)},
@@ -65,9 +66,10 @@
           h('label',{class:'f'},'Contact email', h('input',{type:'email',name:'email',value:x.email,maxlength:'80'})),
           h('label',{class:'f'},'Contact phone', h('input',{type:'tel',name:'phone',value:x.phone,maxlength:'30'})),
           h('label',{class:'f'},'Order minimum', h('input',{type:'text',name:'min',value:x.min,maxlength:'40'})),
+          h('label',{class:'checkrow'}, h('input',{type:'checkbox',name:'local',checked:!!x.local}), 'Local or regional supplier (counts in the community impact report)'),
           h('label',{class:'f'},'Notes', vn), A.polishButton ? A.polishButton(vn, {kind:'vendor', about:x.name}) : null,
           h('button',{class:'btn sm',type:'submit'},'Save'));
-        f.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(f); ['status','contact','email','phone','min','notes'].forEach(k => x[k] = String(d.get(k)||'').trim()); x.lead = +d.get('lead')||0; A.save(); toast('Saved'); A.route(); });
+        f.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(f); ['status','contact','email','phone','min','notes'].forEach(k => x[k] = String(d.get(k)||'').trim()); x.lead = +d.get('lead')||0; x.local = !!d.get('local'); A.save(); toast('Saved'); A.route(); });
         card.append(h('details',null, h('summary',null,'Edit'), f));
       }
       v.append(card);
@@ -94,21 +96,24 @@
       h('label',{class:'f'},'Vendor', h('select',{name:'ven'}, vendors().filter(x => x.status !== 'Not using').map(x => h('option',null,x.name)))),
       h('label',{class:'f'},'Your cost ($)', h('input',{type:'number',name:'cost',step:'0.01',min:'0',required:true})),
       h('label',{class:'f'},'Shipping for this item ($)', h('input',{type:'number',name:'ship',step:'0.01',min:'0',value:'0'})),
+      h('label',{class:'checkrow'}, h('input',{type:'checkbox',name:'noret'}), 'The vendor won\'t take it back (non-returnable or short discount)'),
+      h('label',{class:'f'},'Paid now ($, deposit or in full)', h('input',{type:'number',name:'paid',step:'0.01',min:'0',value:'0'})),
       h('p',{class:'msg',id:'quoteOut','aria-live':'polite'},'Type the cost to see the price.'),
       h('button',{class:'btn',type:'submit'},'Save special order'));
     const out = () => qf.querySelector('#quoteOut');
     qf.addEventListener('input', () => { const d = new FormData(qf), cost = +d.get('cost'); if (!(cost > 0)) return;
-      const q = quote(cost, +d.get('ship')||0); out().textContent = 'Charge '+money(q.price)+' · margin '+Math.round(q.m*100)+'% · you make '+money(q.profit); });
+      const q = quote(cost, +d.get('ship')||0); out().textContent = 'Charge '+money(q.price)+' · margin '+Math.round(q.m*100)+'% · you make '+money(q.profit)+' · '+depositTip(q.price, !!d.get('noret')); });
     qf.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(qf), c = list.find(x => x.id === d.get('c')), q = quote(+d.get('cost'), +d.get('ship')||0);
-      c.orders.push({id:uid(), at:isoDay(new Date()), item:String(d.get('item')).trim(), ven:d.get('ven'), cost:+d.get('cost'), ship:+d.get('ship')||0, price:q.price, status:'To order'}); A.save(); toast('Special order saved for '+c.n); A.route(); });
-    v.append(qf);
+      if (!c) return toast('Add the customer first (bottom of this page)');
+      c.orders.push({id:uid(), at:isoDay(new Date()), item:String(d.get('item')).trim(), ven:d.get('ven'), cost:+d.get('cost'), ship:+d.get('ship')||0, price:q.price, status:'To order',
+        noret:!!d.get('noret'), paid:Math.round((+d.get('paid')||0)*100)/100, when:{'To order':isoDay(new Date())}, contacts:[]}); A.save(); toast('Special order saved for '+c.n); A.route(); });
+    v.append(waitingCard(list), qf);
     // customer cards
     const soon = c => { if (!c.bday) return false; const d = isoDay(new Date()).slice(5), e = addDays(isoDay(new Date()),14).slice(5); return d <= e ? (c.bday >= d && c.bday <= e) : (c.bday >= d || c.bday <= e); };
     list.forEach(c => {
       const card = h('div',{class:'card'}, h('div',{class:'row'}, h('h2',null,c.n), soon(c) ? h('span',{class:'chip calm'},'Birthday soon') : null, c.consent ? h('span',{class:'chip'},'OK to send offers') : null),
         c.likes ? h('p',{class:'small'},'Likes: '+c.likes) : null, c.notes ? h('p',{class:'small muted'}, c.notes) : null,
-        c.orders.length ? h('div',{class:'list'}, c.orders.map(o => h('div',{class:'item'}, h('b',null,o.item), h('span',{class:'small muted'}, o.ven+' · '+money(o.price)+' · '+A.fmtDate(o.at)),
-          h('div',{class:'row'}, ['To order','Ordered','Arrived, customer told','Picked up'].map(st => h('button',{class:'btn sm '+(o.status===st?'':'quiet'),type:'button','aria-pressed':String(o.status===st),onclick:()=>{ o.status = st; A.save(); A.route(); }}, st)))))) : null);
+        c.orders.length ? h('div',{class:'list'}, c.orders.map(o => orderItem(c, o))) : null);
       if (canEdit()){
         const cn = h('textarea',{name:'notes',rows:'2',maxlength:'600'}, c.notes);
         const f = h('form',{class:'grid g2'},
@@ -117,9 +122,14 @@
           h('label',{class:'f'},'Birthday (month and day)', h('input',{type:'text',name:'bday',value:c.bday,placeholder:'MM-DD',pattern:'\\d{2}-\\d{2}',maxlength:'5'})),
           h('label',{class:'f'},'Likes', h('input',{type:'text',name:'likes',value:c.likes,maxlength:'160'})),
           h('label',{class:'f'},'Notes', cn), A.polishButton ? A.polishButton(cn, {kind:'customer', about:c.n}) : null,
-          h('label',{class:'checkrow'}, h('input',{type:'checkbox',name:'consent',checked:c.consent}), 'They said yes to offers and news'),
+          h('label',{class:'checkrow'}, h('input',{type:'checkbox',name:'updates',checked:c.updates !== false}), 'OK to message them about their orders'),
+          h('label',{class:'checkrow'}, h('input',{type:'checkbox',name:'consent',checked:c.consent}), 'They said yes to offers and news (marketing)'),
+          h('p',{class:'small muted'},'Marketing texts need their written yes first, and a "stop" must be honored within 10 business days. Order messages are separate.'),
           h('button',{class:'btn sm',type:'submit'},'Save'));
-        f.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(f); ['email','phone','bday','likes','notes'].forEach(k => c[k] = String(d.get(k)||'').trim()); c.consent = !!d.get('consent'); A.save(); toast('Saved'); A.route(); });
+        f.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(f); ['email','phone','bday','likes','notes'].forEach(k => c[k] = String(d.get(k)||'').trim());
+          const was = !!c.consent; c.consent = !!d.get('consent'); c.updates = !!d.get('updates');
+          if (was !== c.consent) (c.consentLog = c.consentLog || []).push({id:uid(), at:new Date().toISOString(), yes:c.consent, by:A.me()});
+          A.save(); toast('Saved'); A.route(); });
         card.append(h('details',null, h('summary',null,'Edit'), f));
       }
       v.append(card);
@@ -133,7 +143,66 @@
       list.push({id:uid(), n:String(d.get('n')).trim(), email:/@/.test(ct)?ct:'', phone:/@/.test(ct)?'':ct, bday:'', likes:'', consent:!!d.get('consent'), notes:'', orders:[], since:isoDay(new Date())}); A.save(); toast('Added'); A.route(); });
     v.append(nf);
     if (canEdit()) v.append(h('button',{class:'btn quiet sm',type:'button',onclick:()=>download('special-orders-'+isoDay(new Date())+'.csv','text/csv',
-      toCsv([['Customer','Item','Vendor','Cost','Shipping','Price','Status','Date'], ...list.flatMap(c => c.orders.map(o => [c.n,o.item,o.ven,o.cost.toFixed(2),o.ship.toFixed(2),o.price.toFixed(2),o.status,o.at]))]))},'Download special orders (.csv)'));
+      toCsv([['Customer','Item','Vendor','Cost','Shipping','Price','Paid','Status','Date','Days waiting'], ...list.flatMap(c => c.orders.map(o => [c.n,o.item,o.ven,o.cost.toFixed(2),o.ship.toFixed(2),o.price.toFixed(2),(o.paid||0).toFixed(2),o.status,o.at,waited(o)]))]))},'Download special orders (.csv)'));
+  }
+
+  // ---------- special orders: deposits, pickup messages, contact log, days waiting ----------
+  // Bookseller practice (Nov 2026 research): take full prepayment when the vendor won't take the item back,
+  // a deposit otherwise; tell the customer the day it arrives; log "left a message" apart from "spoke to them";
+  // remind weekly; hold about 30 days, then a last reminder before it goes on the shelf.
+  const STEPS = ['To order','Ordered','Arrived','Customer told','Picked up','Back to stock'];
+  const OPEN = ['To order','Ordered'], HOLD = ['Arrived','Customer told'];
+  const HOLD_DAYS = 30;
+  const statusOf = o => o.status === 'Arrived, customer told' ? 'Customer told' : o.status; // older records
+  const daysSince = d => d ? Math.max(0, Math.round((new Date(isoDay(new Date())+'T12:00:00') - new Date(d+'T12:00:00')) / 864e5)) : 0;
+  const arrivedOn = o => (o.when && (o.when['Arrived'] || o.when['Customer told'])) || o.at || ''; // older records: order date
+  const waited = o => HOLD.includes(statusOf(o)) ? daysSince(arrivedOn(o)) : OPEN.includes(statusOf(o)) ? daysSince(o.at) : '';
+  function depositTip(price, noret){
+    if (noret) return 'Take full payment now (they can\'t send it back)';
+    const dep = Math.min(price, Math.max(5, Math.ceil(price * 0.2)));
+    return 'Suggested deposit '+money(dep);
+  }
+  function pickupText(c, o){
+    const store = A.site().name, due = Math.max(0, +(o.price - (o.paid||0)).toFixed(2));
+    return 'Hi '+c.n.split(' ')[0]+', good news from '+store+': '+o.item+' is in and waiting for you at the counter. '+
+      (due > 0 ? 'The balance is '+money(due)+'. ' : 'It is already paid for. ')+'We\'ll hold it for '+HOLD_DAYS+' days. Thank you!';
+  }
+  function contactRow(c, o){
+    const t = pickupText(c, o), mail = c.email ? 'mailto:'+encodeURIComponent(c.email)+'?subject='+encodeURIComponent('Your order is in')+'&body='+encodeURIComponent(t) : null,
+      sms = c.phone ? 'sms:'+c.phone.replace(/[^\d+]/g,'')+'?&body='+encodeURIComponent(t) : null;
+    const log = k => { o.contacts = o.contacts || []; o.contacts.push({id:uid(), at:new Date().toISOString(), k, by:A.me()});
+      if (k === 'spoke' || k === 'sent'){ if (statusOf(o) === 'Arrived'){ o.status = 'Customer told'; (o.when = o.when || {})['Customer told'] = isoDay(new Date()); } } A.save(); A.route(); };
+    return h('div',{class:'grid'},
+      c.updates === false ? h('p',{class:'small muted'},'This customer asked not to get order messages. Tell them in person or when they call.') :
+      h('div',{class:'row'},
+        h('button',{class:'btn ghost sm',type:'button',onclick:e => A.copy(t, e.target)},'Copy pickup message'),
+        mail ? h('a',{class:'btn ghost sm',href:mail,onclick:()=>log('sent')},'Email it') : null,
+        sms ? h('a',{class:'btn ghost sm',href:sms,onclick:()=>log('sent')},'Text it') : null),
+      h('div',{class:'row'},
+        h('button',{class:'btn quiet sm',type:'button',onclick:()=>log('left')},'Left a message'),
+        h('button',{class:'btn quiet sm',type:'button',onclick:()=>log('spoke')},'Spoke to them')),
+      (o.contacts||[]).length ? h('p',{class:'small muted'}, 'Contact log: '+o.contacts.map(x => A.fmtTime(x.at)+' '+({left:'left a message',spoke:'spoke to them',sent:'sent the message'}[x.k]||x.k)+' ('+x.by+')').join(' · ')) : null);
+  }
+  function orderItem(c, o){
+    const st = statusOf(o), w = waited(o), due = Math.max(0, +(o.price - (o.paid||0)).toFixed(2));
+    const flag = HOLD.includes(st) && w >= HOLD_DAYS ? h('span',{class:'chip red'},'Held '+w+' days: last reminder, then shelve')
+      : HOLD.includes(st) && w >= 7 ? h('span',{class:'chip amber'},'Waiting '+w+' days: remind them') : null;
+    const setStatus = s2 => { o.status = s2; (o.when = o.when || {})[s2] = isoDay(new Date()); A.save(); A.route(); };
+    return h('div',{class:'item'}, h('b',null,o.item),
+      h('span',{class:'small muted'}, o.ven+' · '+money(o.price)+' · '+(o.paid ? 'paid '+money(o.paid)+(due > 0 ? ', '+money(due)+' due' : ', paid in full') : 'nothing paid yet')+' · ordered '+A.fmtDate(o.at)+(o.noret ? ' · non-returnable' : '')),
+      flag,
+      h('div',{class:'row'}, STEPS.map(s2 => h('button',{class:'btn sm '+(st===s2?'':'quiet'),type:'button','aria-pressed':String(st===s2),onclick:()=>setStatus(s2)}, s2))),
+      HOLD.includes(st) ? contactRow(c, o) : null);
+  }
+  function waitingCard(list){
+    const rows = list.flatMap(c => c.orders.filter(o => HOLD.includes(statusOf(o))).map(o => ({c, o, w:waited(o)}))).sort((a,b) => b.w - a.w);
+    const open = list.reduce((n,c) => n + c.orders.filter(o => OPEN.includes(statusOf(o))).length, 0);
+    return h('div',{class:'card'}, h('h2',null,'Waiting for pickup'),
+      rows.length ? h('div',{class:'list'}, rows.map(({c,o,w}) => h('div',{class:'item'}, h('b',null, o.item+' · '+c.n),
+        h('span',{class:'small muted'}, statusOf(o)+' · '+w+' day'+(w===1?'':'s')+' since it arrived'+((o.contacts||[]).length ? ' · last contact '+A.fmtDate(o.contacts[o.contacts.length-1].at.slice(0,10)) : ' · not contacted yet')),
+        w >= HOLD_DAYS ? h('span',{class:'chip red'},'Hold time is up') : w >= 7 ? h('span',{class:'chip amber'},'Remind this week') : null)))
+        : h('p',{class:'muted'},'Nothing waiting on the hold shelf.'),
+      h('p',{class:'small muted'}, open+' more on order. Holds last '+HOLD_DAYS+' days. Remind customers weekly, and log each try so the next person knows.'));
   }
 
   function marginView(v){
@@ -150,8 +219,11 @@
   A.register({id:'people', name:'Vendors and customers', what:'Vendor directory with status, terms and lead times; customers with birthdays, likes, consent and special orders priced by your margin rules.', tiers:['lead','manager','owner'],
     views:{vendors:{t:'Vendors', ic:'🚚', render:vendorsView}, customers:{t:'Customers', ic:'🙂', render:customersView}, pricing:{t:'Order pricing', ic:'💲', render:marginView}}});
   A.homeHooks.push(v => { const b = customers().filter(c => { if (!c.bday) return false; const d = isoDay(new Date()).slice(5), e = addDays(isoDay(new Date()),7).slice(5); return d <= e ? (c.bday >= d && c.bday <= e) : (c.bday >= d || c.bday <= e); });
-    const waiting = customers().flatMap(c => c.orders.filter(o => o.status === 'To order' || o.status === 'Ordered'));
-    if (b.length || waiting.length) v.append(h('div',{class:'card'}, h('h2',null,'Customers this week'),
-      b.length ? h('p',null,'Birthdays: '+b.map(c => c.n).join(', ')) : null, waiting.length ? h('p',null, waiting.length+' special orders not in yet. ', h('a',{href:'#/customers'},'See them')) : null)); });
+    const waiting = customers().flatMap(c => c.orders.filter(o => OPEN.includes(statusOf(o))));
+    const held = customers().flatMap(c => c.orders.filter(o => HOLD.includes(statusOf(o))));
+    const late = held.filter(o => waited(o) >= 7).length;
+    if (b.length || waiting.length || held.length) v.append(h('div',{class:'card'}, h('h2',null,'Customers this week'),
+      b.length ? h('p',null,'Birthdays: '+b.map(c => c.n).join(', ')) : null, waiting.length ? h('p',null, waiting.length+' special orders not in yet. ', h('a',{href:'#/customers'},'See them')) : null,
+      held.length ? h('p',null, held.length+' waiting for pickup'+(late ? ', '+late+' for a week or more' : '')+'. ', h('a',{href:'#/customers'},'Tell them')) : null)); });
   window.SSPeople = {quote, marginFor};
 })();

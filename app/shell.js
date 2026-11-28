@@ -40,7 +40,12 @@
 
   // ---------- saved state (this browser only; move to Supabase tables when ready) ----------
   const KEY = 'shop-steady-v1';
-  const fresh = () => Object.assign(JSON.parse(JSON.stringify(D.SEED)), {tier:'owner', site:D.SITES[0].id, mods:{}, setup:{}});
+  // Demo mode: no Supabase set up yet, or someone chose "Try the demo" (?demo in the address). Sample data only.
+  // Signed in, a device starts empty and fills from the shared copy: sample records must never reach real data.
+  const cfg = window.DESK_CONFIG || {};
+  let demo = /[?&]demo\b/.test(location.search); try { demo = demo || sessionStorage.getItem('shop-steady-demo') === '1'; } catch(e){}
+  demo = demo || !cfg.supabaseUrl || !window.supabase || /YOUR-PROJECT-REF/.test(cfg.supabaseUrl);
+  const fresh = () => Object.assign(demo ? JSON.parse(JSON.stringify(D.SEED)) : {inv:{}, exp:[]}, {tier:'owner', site:D.SITES[0].id, mods:{}, setup:{}});
   let S; try { S = JSON.parse(localStorage.getItem(KEY)) || fresh(); } catch(e){ S = fresh(); }
   S.setup = S.setup || {};
   // save(true) stores on this device only; a plain save() also tells sync.js to send the change to the server.
@@ -64,6 +69,9 @@
   // A module starts on when the location's business type lists it (or lists no modules at all); the owner can change it.
   const modState = m => ((S.mods[S.site]||{})[m]) || {on:!btype().modules || btype().modules.includes(m), tiers:(D.MODULES[m]||{}).tiers || D.TIERS.map(t=>t.id)};
   const RANK = {staff:1, lead:2, manager:3, owner:4};
+  // Signed in, "View as" offers only your own level and below (the database says which level you have).
+  const myRank = () => window.SSApp && window.SSApp.myRole ? (RANK[window.SSApp.myRole] || 1) : 4;
+  const clampTier = () => { if ((RANK[S.tier] || 1) > myRank()){ S.tier = window.SSApp.myRole; save(true); } };
   const viewOn = v => { const m = VIEWS[v] && VIEWS[v].mod; if (!m) return true; if (VIEWS[v].min && (RANK[S.tier]||1) < RANK[VIEWS[v].min]) return false;
     const st = modState(m); return st.on && st.tiers.includes(S.tier); };
   const listed = v => viewOn(v) && !VIEWS[v].hidden;
@@ -109,10 +117,11 @@
   }
   function fillSwitchers(){
     const ts = $('tierSel'), ss = $('siteSel'); ts.textContent = ''; ss.textContent = '';
-    D.TIERS.forEach(t => ts.append(h('option',{value:t.id,selected:t.id===S.tier},tierName(t.id))));
+    clampTier();
+    D.TIERS.forEach(t => ts.append(h('option',{value:t.id,selected:t.id===S.tier,hidden:RANK[t.id] > myRank(),disabled:RANK[t.id] > myRank()},tierName(t.id))));
     D.SITES.forEach(s => ss.append(h('option',{value:s.id,selected:s.id===S.site},setupOf(s.id).name)));
   }
-  $('tierSel').addEventListener('change', e => { S.tier = e.target.value; save(); go('home'); });
+  $('tierSel').addEventListener('change', e => { S.tier = e.target.value; clampTier(); save(true); fillSwitchers(); go('home'); });
   $('siteSel').addEventListener('change', e => { S.site = e.target.value; save(); fillSwitchers(); route(); });
   let current = 'home', param = '';
   function go(v){ if (location.hash === '#/'+v) route(); else location.hash = '#/'+v; }
@@ -126,6 +135,7 @@
     S.mods._basic2 = true; save();
   }
   function route(){
+    clampTier();
     basicTier();
     const m = (location.hash||'').match(/^#\/([a-z]+)(?:\/(.*))?/);
     current = m && VIEWS[m[1]] && viewOn(m[1]) ? m[1] : 'home';
@@ -190,10 +200,7 @@
 
   // ---------- sign-in: password, emailed code fallback, persistent session, invite only ----------
   function gate(msg, err){ $('app').hidden = true; $('gate').hidden = false; const m = $('gateMsg'); m.textContent = msg||''; m.hidden = !msg; m.className = 'msg'+(err?' err':''); }
-  const cfg = window.DESK_CONFIG || {};
-  // Demo mode: no Supabase set up yet, or someone chose "Try the demo" (?demo in the address). Sample data only.
-  let demo = /[?&]demo\b/.test(location.search); try { demo = demo || sessionStorage.getItem('shop-steady-demo') === '1'; } catch(e){}
-  window.SSApp.demo = demo || !cfg.supabaseUrl || !window.supabase || /YOUR-PROJECT-REF/.test(cfg.supabaseUrl);
+  window.SSApp.demo = demo;
   $('demoBtn') && $('demoBtn').addEventListener('click', () => { try { sessionStorage.setItem('shop-steady-demo','1'); } catch(e){} location.reload(); });
   if (window.SSApp.demo){
     $('gate').hidden = true; $('app').hidden = false; $('whoEmail').textContent = 'Demo with sample data';
@@ -234,8 +241,11 @@
     fillSwitchers(); route();
     if (window.SSPw) SSPw.afterSignIn(sb, user, how);
   }
-  (window.SSIdle ? SSIdle.guard(sb) : Promise.resolve()).then(() => {
+  // Start once every module script has run: a quick sign-in check could otherwise finish before sync.js loads,
+  // leaving the device unsynced and at whatever level it last showed.
+  const boot = () => (window.SSIdle ? SSIdle.guard(sb) : Promise.resolve()).then(() => {
     sb.auth.onAuthStateChange((_e, session) => setTimeout(() => onSession(session), 0));
     sb.auth.getSession().then(({data}) => onSession(data.session));
   });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
