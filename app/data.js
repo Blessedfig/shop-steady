@@ -14,13 +14,13 @@ window.APP_DATA = {
   // Add a type by copying one of these. "modules" lists the module ids that start switched on for that type.
   BUSINESS_TYPES: {
     bookstore: {name:'Bookstore', tiers:{staff:'Front desk', lead:'Shift lead', manager:'Store manager', owner:'Owner'},
-      items:'titles', usesIsbn:true, modules:['shifts','frontdesk','training','till','shopify','ask','hr','decide','weekly','voice','count','people','notes','taxlog','receiving','inventory','expenses','setup','logins']},
+      items:'titles', usesIsbn:true, modules:['shifts','frontdesk','training','till','shopify','ask','hr','decide','weekly','voice','count','people','notes','taxlog','receiving','inventory','expenses','setup','logins','opps']},
     retail:    {name:'Retail shop', tiers:{staff:'Front desk', lead:'Shift lead', manager:'Store manager', owner:'Owner'},
-      items:'products', usesIsbn:false, modules:['shifts','frontdesk','training','till','shopify','ask','hr','decide','weekly','voice','count','people','notes','taxlog','receiving','inventory','expenses','setup','logins']},
+      items:'products', usesIsbn:false, modules:['shifts','frontdesk','training','till','shopify','ask','hr','decide','weekly','voice','count','people','notes','taxlog','receiving','inventory','expenses','setup','logins','opps']},
     cafe:      {name:'Café or food counter', tiers:{staff:'Barista', lead:'Shift lead', manager:'Manager', owner:'Owner'},
-      items:'supplies', usesIsbn:false, modules:['shifts','frontdesk','training','till','shopify','ask','hr','decide','weekly','voice','count','people','notes','taxlog','receiving','inventory','expenses','setup','logins']},
+      items:'supplies', usesIsbn:false, modules:['shifts','frontdesk','training','till','shopify','ask','hr','decide','weekly','voice','count','people','notes','taxlog','receiving','inventory','expenses','setup','logins','opps']},
     services:  {name:'Services or rentals', tiers:{staff:'Front desk', lead:'Lead', manager:'Manager', owner:'Owner'},
-      items:'supplies', usesIsbn:false, modules:['shifts','frontdesk','training','till','shopify','ask','hr','decide','weekly','voice','count','people','notes','taxlog','receiving','inventory','expenses','setup','logins']}
+      items:'supplies', usesIsbn:false, modules:['shifts','frontdesk','training','till','shopify','ask','hr','decide','weekly','voice','count','people','notes','taxlog','receiving','inventory','expenses','setup','logins','opps']}
   },
   // Locations (Steady Shift called these "homes" or "sites"). One is enough to start.
   // The demo shows one retail store and one service business under the same owner.

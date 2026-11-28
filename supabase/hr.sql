@@ -10,7 +10,7 @@
 -- ever saved where staff could read it.
 
 create or replace function public.private_doc(k text) returns boolean language sql immutable as $$
-  select k in ('pay','trips','writeoffs','costs','safe','staffnotes','hr','decisions') $$;
+  select k in ('pay','trips','writeoffs','costs','safe','staffnotes','hr','decisions','opps') $$;
 grant execute on function public.private_doc(text) to authenticated;
 
 drop policy if exists "members read app data" on public.app_docs;
