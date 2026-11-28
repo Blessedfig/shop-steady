@@ -5,7 +5,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Features: Downtown Stube</title>
-<meta name="description" content="Everything in Downtown Stube: owner dashboard, scheduling, store-mode time clock with PINs, checklists, timesheets and overtime, inventory and reorders, special orders, expenses and what's coming next.">
+<meta name="description" content="Everything in Downtown Stube: a Monday money summary, schedule and time clock, payroll handoff, checklists and training, restocking and special orders, tax-year books, loans and owner pay.">
 <meta name="theme-color" content="#1B4332">
 <link rel="icon" type="image/png" href="app/icons/icon-192.png">
 <link rel="apple-touch-icon" href="app/icons/apple-touch-icon.png">
@@ -30,9 +30,9 @@
     <div class="stack">
       <span class="eyebrow">Features</span>
       <h1>Everything a small shop runs on, in one place</h1>
-      <p class="lede">Each tool is a module you can switch on or off for each role. Start with what hurts most and add the rest when you're ready.</p>
+      <p class="lede">Each tool is a module you can switch on or off for each role. Start with what hurts most and add the rest when you're ready. <b>Available now</b> means it's in the app today. <b>In testing</b> means it's built and being checked in our own shop first.</p>
       <nav class="jump" aria-label="Jump to a feature">
-        <a href="#dashboard">Owner dashboard</a><a href="#team">Schedule and time clock</a><a href="#checklists">Checklists and training</a><a href="#inventory">Inventory and orders</a><a href="#money">Money</a><a href="#setup">Setup and roles</a><a href="#next">Coming next</a>
+        <a href="#dashboard">Owner numbers</a><a href="#team">People and pay</a><a href="#checklists">Checklists and training</a><a href="#inventory">Stock and ordering</a><a href="#money">Books and taxes</a><a href="#setup">Setup</a>
       </nav>
     </div>
   </div>
@@ -41,15 +41,16 @@
 <section id="dashboard" aria-labelledby="dash-h">
   <div class="wrap feature">
     <div class="stack">
-      <div class="status"><span class="tag">Available now</span></div>
-      <h2 id="dash-h">Owner dashboard, on the web and in the app</h2>
-      <p class="lede">Sign in on any computer and your home screen becomes the owner dashboard. It's the same account and the same data as the phone app, so a change on the shop tablet shows up on your laptop right away.</p>
+      <span class="eyebrow">Owner numbers</span>
+      <h2 id="dash-h">Know how the shop really did this week</h2>
+      <p class="lede">Your register knows what sold. Downtown Stube adds what it cost: item costs, labor and the bills. Then it tells you what was left over, in plain words.</p>
       <ul class="ticks">
-        <li>Spending and who's clocked in, on one screen</li>
-        <li>What needs you today: low stock and open shifts</li>
-        <li>Coming: sales and stock from Shopify, and labor as a share of sales</li>
+        <li><b>Monday money summary:</b> sales, item costs, gross margin, labor as a share of sales, and what was left</li>
+        <li><b>Home dashboard:</b> who's on shift, what's low, and what needs you today</li>
+        <li><b>Ask:</b> a built-in assistant that answers from your store's records, and only shows what the asker's role may see</li>
+        <li><b>Community impact report</b> <span class="tag alt">In testing</span>: events, local jobs and local spending, ready for grants, landlords and the city</li>
       </ul>
-      <div class="row"><a class="btn primary" href="app/#/home">Open the owner dashboard</a></div>
+      <div class="row"><a class="btn ghost" href="app/#/home">Open the owner dashboard</a></div>
     </div>
     <div class="device" role="img" aria-label="Example owner dashboard with staff on shift, low-stock count, and spending by category.">
       <div class="bar"><span class="brand-mark" aria-hidden="true"></span>Home<span class="who">Owner · All locations</span></div>
@@ -74,14 +75,13 @@
 <section class="tint" id="team" aria-labelledby="team-h">
   <div class="wrap feature flip">
     <div class="stack">
-      <div class="status"><span class="tag">Available now</span></div>
-      <h2 id="team-h">Schedule, store mode and timesheets</h2>
-      <p class="lede">Build the week, publish it, and let the shared store tablet handle the clock. Each person taps their own PIN, and hours flow straight into timesheets.</p>
+      <span class="eyebrow">People and pay</span>
+      <h2 id="team-h">From the schedule to the paycheck</h2>
+      <p class="lede">Build the week, let the store tablet run the clock, and hand payroll a clean file. Wisconsin and federal rules are built in, so you don't have to remember them.</p>
       <ul class="ticks">
-        <li><b>Schedule:</b> a weekly planner with open shifts anyone can pick up</li>
-        <li><b>Store mode:</b> a shared tablet that stays signed in and survives power cuts</li>
-        <li><b>Team:</b> pay rates and personal PINs, kept to owners and managers</li>
-        <li><b>Timesheets:</b> overtime flagged, plus a payroll file to download</li>
+        <li><b>Schedule:</b> publish the week, post open shifts, and get warned about short rest or late notice</li>
+        <li><b>Store mode:</b> one shared tablet, a personal PIN for each person</li>
+        <li><b>Front desk:</b> a simple home screen with big buttons for everyday jobs, so new hires are useful on day one</li>
       </ul>
     </div>
     <div class="device" role="img" aria-label="Example store-mode clock-in confirmation.">
@@ -96,18 +96,27 @@
       </div>
     </div>
   </div>
+  <div class="wrap" style="margin-top:2rem">
+    <div class="grid g3">
+      <div class="card"><div class="status"><span class="tag alt">In testing</span></div><h3>Time clock that follows the rules</h3><p>Overtime counted per workweek, breaks timed (in Wisconsin, breaks under 30 minutes stay paid), and limits for workers under 16. Managers can fix a missed punch, and every fix is logged.</p></div>
+      <div class="card"><div class="status"><span class="tag alt">In testing</span></div><h3>Payroll from the time clock</h3><p>Each pay run adds up hours, overtime and gross pay, then hands a file to Gusto or QuickBooks Payroll for the taxes and deposits. Nothing sensitive like bank numbers is stored here.</p></div>
+      <div class="card"><div class="status"><span class="tag">Available now</span></div><h3>HR files</h3><p>Offer letters, tax forms and reviews, kept privately for each person. Only managers and the owner can open them.</p></div>
+
+    </div>
+  </div>
 </section>
 
 <section id="checklists" aria-labelledby="chk-h">
   <div class="wrap feature">
     <div class="stack">
-      <div class="status"><span class="tag">Available now</span><span class="tag alt">Staff playbook coming</span></div>
-      <h2 id="chk-h">Checklists that train as they go</h2>
+      <span class="eyebrow">Checklists and training</span>
+      <h2 id="chk-h">Checklists and courses that train as they go</h2>
       <p class="lede">Opening, closing and daily routines, written once by you and followed step by step by everyone. New staff learn the job by doing it, and you can see what got done.</p>
       <ul class="ticks">
         <li>Separate lists for opening, closing and any day of the week</li>
         <li>Each step can carry a short how-to in your own words</li>
-        <li>Coming: a staff playbook with your store's answers to common questions</li>
+        <li><b>Training:</b> ready-made courses for every job (front desk, special orders, customer service, opening and closing, safety, the register), which you can edit, hide or add to</li>
+        <li><b>Store policies:</b> your own answers to common questions, in one course</li>
       </ul>
     </div>
     <div class="device" role="img" aria-label="Example closing checklist with a how-to note under one step.">
@@ -125,45 +134,40 @@
 </section>
 
 <section class="tint" id="inventory" aria-labelledby="inv-h">
-  <div class="wrap feature flip">
-    <div class="stack">
-      <div class="status"><span class="tag">Available now</span><span class="tag alt">Live supplier sync coming</span></div>
-      <h2 id="inv-h">Inventory, reorders and special orders</h2>
-      <p class="lede">Track stock by ISBN or SKU, see what's low, and send one tidy order per supplier. When a customer asks for something you don't carry, quote it at the margin you set.</p>
-      <ul class="ticks">
-        <li>ISBN check-digit validation, low-stock flags and reorder points</li>
-        <li>Suggested orders grouped by supplier, as a spreadsheet file</li>
-        <li>Consignment and used items alongside new stock</li>
-        <li>Import your stock list from a spreadsheet template</li>
-        <li>Stock counts, plus Shopify sync by file export</li><li>Customer accounts and special orders priced by your margin rules</li><li>Coming: live Shopify sync, Faire orders and one title search across every supplier</li>
-      </ul>
+  <div class="wrap">
+    <div class="head">
+      <span class="eyebrow">Stock and ordering</span>
+      <h2 id="inv-h">Reorder what sold, from the right supplier</h2>
+      <p class="lede">Your stock, your vendors and your costs in one place. Downtown Stube drafts the orders. You check them and send.</p>
     </div>
-    <div class="device" role="img" aria-label="Example inventory list with low-stock flags.">
-      <div class="bar"><span class="brand-mark" aria-hidden="true"></span>Inventory<span class="who">1,842 items</span></div>
-      <div class="body">
-        <div class="list">
-          <div><span class="t">Local trail guide</span><small>2 left</small><span class="chip amber">Low</span></div>
-          <div><span class="t">Picture book, holiday</span><small>1 left</small><span class="chip amber">Low</span></div>
-          <div><span class="t">Used: classic novel</span><small>4</small><span class="chip sky">Used</span></div>
-          <div><span class="t">Local candle (consignment)</span><small>9</small><span class="chip sky">Consign</span></div>
-          <div><span class="t">New release, fiction</span><small>12</small><span class="chip">OK</span></div>
-        </div>
-      </div>
+    <div class="grid g3">
+      <div class="card"><div class="status"><span class="tag">Available now</span></div><h3>Inventory and counts</h3><p>Stock by ISBN or SKU, low-stock flags, used and consignment items, and stock counts. Load your list from a spreadsheet.</p></div>
+      <div class="card"><div class="status"><span class="tag alt">In testing</span></div><h3>Restock what sold</h3><p>Looks at what sold and builds a draft order for each supplier, sent to the right supplier for each publisher.</p></div>
+      <div class="card"><div class="status"><span class="tag alt">In testing</span></div><h3>Vendors and title catalog</h3><p>Every supplier's cost, discount and stock for a title, side by side, so you see your margin before you order. Staff see stock and prices, not costs.</p></div>
+      <div class="card"><div class="status"><span class="tag alt">In testing</span></div><h3>Special orders</h3><p>Quoted at your target margin, with deposits, a pickup message when the order lands, and a 30-day hold shelf.</p></div>
+      <div class="card"><div class="status"><span class="tag alt">In testing</span></div><h3>Shopify connection</h3><p>Sales and stock come in from Shopify on their own, and cleaned-up product details go back.</p></div>
+      <div class="card"><div class="status"><span class="tag alt">In testing</span></div><h3>Product cleanup</h3><p>Finds missing ISBNs, wrong costs from wholesale imports and missing details. You approve each fix, or let a rule run on its own.</p></div>
+
     </div>
+    <p class="small muted" style="margin-top:1rem">Selling online too? A set of rules keeps only in-stock, ready-to-ship items in your Shopify online store, so customers can't order what you don't have.</p>
   </div>
 </section>
 
 <section id="money" aria-labelledby="money-h">
   <div class="wrap">
     <div class="head">
-      <div class="status"><span class="tag">Expenses available now</span></div>
-      <h2 id="money-h">Money, without the shoebox of receipts</h2>
-      <p class="lede">Log a receipt in seconds by category. The owner spending card shows where the money went this month.</p>
+      <span class="eyebrow">Books, taxes and owner pay</span>
+      <h2 id="money-h">The year's books, ready for your accountant</h2>
+      <p class="lede">Receipts, loans and your own pay in one place, tied to your Shopify sales. At tax time you hand over a tidy file instead of a shoebox.</p>
     </div>
     <div class="grid g3">
-      <div class="card"><h3>Expense log</h3><p>Type in a receipt, pick a category, done. Download the log as a spreadsheet for your accountant.</p></div>
-      <div class="card"><h3>Payroll file</h3><p>Timesheets export hours, rates and overtime in one file for your payroll service or accountant.</p></div>
-      <div class="card"><h3>QuickBooks sync <span class="tag alt">Coming</span></h3><p>Send expenses and payroll totals to QuickBooks so the books stay current without retyping.</p></div>
+      <div class="card"><div class="status"><span class="tag">Available now</span></div><h3>Expenses</h3><p>Log a receipt in seconds by category, and download the log as a spreadsheet.</p></div>
+      <div class="card"><div class="status"><span class="tag">Available now</span></div><h3>Tax year and write-offs</h3><p>Yearly totals tied to Shopify sales, with stock counted as cost of goods, not written off all at once. Shows which tax line each cost belongs on.</p></div>
+      <div class="card"><div class="status"><span class="tag">Available now</span></div><h3>Loans and capital</h3><p>Track Shopify Capital advances, bank loans and credit lines, including how much of each payment is fee or interest.</p></div>
+      <div class="card"><div class="status"><span class="tag alt">In testing</span></div><h3>Owner pay</h3><p>Choose owner draws or a salary for each store, and see your quarterly estimated tax amounts before they're due.</p></div>
+      <div class="card"><div class="status"><span class="tag alt">In testing</span></div><h3>Import your old records</h3><p>Drop in a folder of old files. Sort them free, or have AI do the sorting as a paid add-on. You check everything before it's saved.</p></div>
+      <div class="card"><div class="status"><span class="tag alt">In testing</span></div><h3>Your data, any time</h3><p>Download everything your store has in the app as one file, whenever you want.</p></div>
+
     </div>
   </div>
 </section>
@@ -171,7 +175,7 @@
 <section class="tint" id="setup" aria-labelledby="setup-h">
   <div class="wrap">
     <div class="head">
-      <div class="status"><span class="tag">Available now</span></div>
+      <span class="eyebrow">Setup</span>
       <h2 id="setup-h">Setup, roles and sign-in</h2>
       <p class="lede">Downtown Stube shapes itself to your business, not the other way around.</p>
     </div>
@@ -191,18 +195,14 @@
     <div class="head">
       <span class="eyebrow">Roadmap</span>
       <h2 id="next-h">Coming next</h2>
-      <p class="lede">Built in this order, tested in a real shop before anyone else sees it.</p>
+      <p class="lede">Built in this order, and tested in a real shop before anyone else sees it.</p>
     </div>
     <div class="grid g3">
-      <div class="card"><span class="tag alt">Next</span><h3>Live Shopify and Faire sync</h3><p>Shopify works by file today. Next, stock flows in on its own, and wholesale orders arrive from Faire and other sites.</p></div>
-      <div class="card"><span class="tag alt">Next</span><h3>One search across suppliers</h3><p>Look up a title or product once and see every supplier that has it, then order in a tap.</p></div>
-      <div class="card"><span class="tag">Available now</span><h3>Special orders</h3><p>Tie an order to a customer account and quote it at your target margin. Coming: telling them automatically when it lands.</p></div>
-      <div class="card"><span class="tag">Available now</span><h3>Decision planners</h3><p>Step-by-step help with big first-time calls, starting with "Should I hire?"</p></div>
-      <div class="card"><span class="tag">Available now</span><h3>HR files</h3><p>Offer letters, tax forms and reviews, kept privately per person.</p></div>
-      <div class="card"><span class="tag sky">Planned</span><h3>Community impact report</h3><p>Events, local jobs and partnerships, in a report for grants, landlords and local officials.</p></div>
-      <div class="card"><span class="tag sky">Planned</span><h3>Customer and staff insights</h3><p>Who your regulars are, what they buy, and which shifts run smoothest.</p></div>
-      <div class="card"><span class="tag sky">Planned</span><h3>Built-in backups</h3><p>Automatic weekly backups you can download and keep.</p></div>
-      <div class="card"><span class="tag sky">Planned</span><h3>App stores</h3><p>Downtown Stube in the Apple App Store and Google Play after testing.</p></div>
+      <div class="card"><h3>QuickBooks sync</h3><p>Expenses and payroll totals flow into QuickBooks without retyping.</p></div>
+      <div class="card"><h3>Faire and more suppliers</h3><p>Wholesale orders come in on their own, and one search covers every supplier.</p></div>
+      <div class="card"><h3>Square and other registers</h3><p>The same back room for shops that ring up on Square.</p></div>
+      <div class="card"><h3>Customer and staff insights</h3><p>Who your regulars are, what they buy, and which shifts run smoothest.</p></div>
+      <div class="card"><h3>App stores</h3><p>Downtown Stube in the Apple App Store and Google Play after testing.</p></div>
     </div>
   </div>
 </section>
