@@ -278,3 +278,32 @@ body.stafflogin .switch:has(#tierSel){display:none}
 .tile.big .ic{font-size:2.2rem}
 .tile.big b{font-size:1.12rem;line-height:1.25}
 .backhome{margin-bottom:.8rem}
+
+/* five areas (areas.js): one headline number per area, chunked screens, detail on tap */
+.headline{display:flex;flex-wrap:wrap;align-items:baseline;gap:.2rem .6rem}
+.headline .bignum{font:800 2.6rem/1.05 var(--display);color:var(--pine)}
+.headline .biglabel{font:700 1.15rem/1.2 var(--display)}
+.headline p{flex-basis:100%}
+.areagroups{display:grid;gap:1.25rem}
+.areagroup{display:grid;gap:.6rem}
+.areagroup h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-family:var(--body)}
+.tiles .tile{min-height:76px}
+.needs{border-left:6px solid var(--mustard)}
+.needlist{list-style:none;margin:0;padding:0;display:grid;gap:.35rem}
+.needlist a{display:flex;justify-content:space-between;align-items:center;gap:.75rem;min-height:48px;padding:.5rem .75rem;border-radius:12px;background:var(--bg);text-decoration:none;color:var(--ink);font-weight:600}
+.needlist a:hover{background:var(--sky-soft)}
+.areadoors{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1rem}
+.door strong{color:var(--brandy);font-weight:800}
+.crumb{justify-self:start;font-weight:700;text-decoration:none;min-height:44px;display:inline-flex;align-items:center}
+nav.side a.settings{margin-top:1rem;border-top:1px solid var(--line);border-radius:0 0 12px 12px;font-weight:500;color:var(--muted)}
+@media (max-width:860px){
+  .areadoors{grid-template-columns:repeat(2,minmax(0,1fr))}
+  nav.side a.settings{margin-top:0;border-top:0;border-radius:12px}
+}
+@media (max-width:560px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* phones: the five areas fit in one row, icon over label, no sideways scrolling */
+@media (max-width:860px){
+  body:not(.simple) nav.side{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);overflow:visible;padding:.3rem 8px;gap:.15rem}
+  body:not(.simple) nav.side a{flex-direction:column;gap:.15rem;padding:.4rem .1rem;font-size:.78rem;text-align:center;white-space:nowrap;min-height:56px;justify-content:center}
+  body:not(.simple) nav.side .ic{font-size:1.2rem}
+}
