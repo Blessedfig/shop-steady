@@ -433,8 +433,15 @@
       h('div',{class:'row'}, h('button',{class:'btn',type:'button',onclick:summary},'Year summary (.csv)'), h('button',{class:'btn ghost',type:'button',onclick:detail},'Every purchase (.csv)'),
         h('button',{class:'btn ghost',type:'button',onclick:assets},'Equipment and depreciation (.csv)'), h('button',{class:'btn ghost',type:'button',onclick:je},'QuickBooks depreciation entry (.csv)'))));
   }
+  // ---------- hidden effects of a decision, in place (app/ripple.js) ----------
+  function rippleCard(box, title, kind, values){
+    if (!A.ripplePanel) return;
+    const pane = h('div'); box.append(card(title, pane)); A.ripplePanel(pane, kind, values, null, 'Move the sliders');
+  }
   async function yearView(v){ await guarded(v, 'Tax year and write-offs', 'Sales from your POS, cost of goods sold, every write-off on its tax line, and what to set aside. Pick the year above.', (box, c) => {
-    overview(box, c); monthly(box, c); cogsCard(box, c); linesCard(box, c); building(box, c); burn(box, c); limits(box, c); exportsCard(box, c); }); }
+    overview(box, c); monthly(box, c); cogsCard(box, c); linesCard(box, c); building(box, c); burn(box, c); limits(box, c);
+    rippleCard(box, 'Spending before December 31 to save tax?', 'purchase', {price:2000, saves:0});
+    exportsCard(box, c); }); }
 
   // ---------- Each purchase ----------
   async function purchasesView(v){ await guarded(v, 'Each purchase and how it counts', 'Every expense this year: whether it is written off now, half, through cost of goods sold, over several years, or not at all. Change any line that is wrong.', (box, c) => {
@@ -481,6 +488,7 @@
       try { await DB.saveAsset(a); if (from) await saveY(c, Y => { Y.over = Y.over || {}; Y.over[key(from)] = {how:'asset'}; });
         S().booksEdit = null; toast('Saved'); if (from) A.go('equipment'); else A.route(); } catch(err){ toast(err.message || String(err)); } });
     box.append(card(edit ? 'Change '+edit.name : from ? 'Add this purchase to Equipment' : 'Add equipment or building work', f));
+    rippleCard(box, 'What it really costs', 'purchase', {price:+a0.cost || 1200, biz:+a0.business_pct || 100, life:({computer:5, vehicle:5, improvement:15, systems:39, building:39, software:3})[a0.class] || 7});
     const rows = c.dep.map(d => h('tr',null, h('td',null, h('b',null,d.a.name), h('div',{class:'small muted'}, (CLASSES[d.a.class]||{}).l)), h('td',null, A.fmtDate(d.a.in_service)), h('td',null, money(+d.a.cost)+(+d.a.business_pct < 100 ? ' · '+d.a.business_pct+'%' : '')),
       h('td',{class:'small'}, METHODS[d.a.method]), h('td',null, money(d.fed)), h('td',null, money(d.wi)), h('td',{class:'small muted'}, d.note || ''),
       h('td',null, h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ S().booksEdit = d.a.id; A.save(true); A.go('equipment'); }},'Change'),
@@ -528,6 +536,9 @@
       h('button',{class:'btn',type:'submit'},'Add'));
     f.addEventListener('submit', async e => { e.preventDefault(); const d = new FormData(f);
       try { await DB.saveLoan({kind:String(d.get('kind')), lender:String(d.get('lender')).trim(), started:String(d.get('started')), amount:+d.get('amount'), fee:+d.get('fee')||0, rate:+d.get('rate')||0, holdback:d.get('hold') ? +d.get('hold') : null, use_for:String(d.get('use')||'').trim() || null}); toast('Added'); A.route(); } catch(err){ toast(err.message); } });
+    const lastLoan = c.loans.map(x => x.l).filter(l => l.kind !== 'owner').sort((a,b) => String(b.started).localeCompare(String(a.started)))[0];
+    rippleCard(box, lastLoan ? 'What '+lastLoan.lender+' really costs' : 'What a loan really costs', 'loan',
+      lastLoan ? {amount:+lastLoan.amount, fee:+lastLoan.fee || 0, hold:+lastLoan.holdback || 0} : {});
     box.append(card('Add a loan, advance or money you put in', f));
     box.append(card('How it counts', h('ul',{class:'small'},
       h('li',null,'Money you borrow is not income, and paying it back is not a write-off. Only the fee or interest counts, in the year you pay it (Schedule C line 16b).'),
