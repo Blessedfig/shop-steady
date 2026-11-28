@@ -105,7 +105,7 @@
     // customer cards
     const soon = c => { if (!c.bday) return false; const d = isoDay(new Date()).slice(5), e = addDays(isoDay(new Date()),14).slice(5); return d <= e ? (c.bday >= d && c.bday <= e) : (c.bday >= d || c.bday <= e); };
     list.forEach(c => {
-      const card = h('div',{class:'card'}, h('div',{class:'row'}, h('h2',null,c.n), soon(c) ? h('span',{class:'chip calm'},'Birthday soon') : null, c.consent ? h('span',{class:'chip'},'OK to send offers') : null),
+      const card = h('div',{class:'card'}, h('div',{class:'row'}, h('h2',null,c.n), soon(c) ? h('span',{class:'chip calm'},'Birthday soon') : null, c.consent ? h('span',{class:'chip'},'OK to email offers'+(c.consentAt ? ' since '+A.fmtDate(c.consentAt) : '')) : null),
         c.likes ? h('p',{class:'small'},'Likes: '+c.likes) : null, c.notes ? h('p',{class:'small muted'}, c.notes) : null,
         c.orders.length ? h('div',{class:'list'}, c.orders.map(o => h('div',{class:'item'}, h('b',null,o.item), h('span',{class:'small muted'}, o.ven+' · '+money(o.price)+' · '+A.fmtDate(o.at)),
           h('div',{class:'row'}, ['To order','Ordered','Arrived, customer told','Picked up'].map(st => h('button',{class:'btn sm '+(o.status===st?'':'quiet'),type:'button','aria-pressed':String(o.status===st),onclick:()=>{ o.status = st; A.save(); A.route(); }}, st)))))) : null);
@@ -117,9 +117,10 @@
           h('label',{class:'f'},'Birthday (month and day)', h('input',{type:'text',name:'bday',value:c.bday,placeholder:'MM-DD',pattern:'\\d{2}-\\d{2}',maxlength:'5'})),
           h('label',{class:'f'},'Likes', h('input',{type:'text',name:'likes',value:c.likes,maxlength:'160'})),
           h('label',{class:'f'},'Notes', cn), A.polishButton ? A.polishButton(cn, {kind:'customer', about:c.n}) : null,
-          h('label',{class:'checkrow'}, h('input',{type:'checkbox',name:'consent',checked:c.consent}), 'They said yes to offers and news'),
+          h('label',{class:'checkrow'}, h('input',{type:'checkbox',name:'consent',checked:c.consent}), 'They said yes to offers and news by email'),
+          h('p',{class:'small muted'},'Texts with offers need their written OK first (federal TCPA), so keep offers to email unless they signed up for texts. Order-ready texts are fine when they asked for them.'),
           h('button',{class:'btn sm',type:'submit'},'Save'));
-        f.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(f); ['email','phone','bday','likes','notes'].forEach(k => c[k] = String(d.get(k)||'').trim()); c.consent = !!d.get('consent'); A.save(); toast('Saved'); A.route(); });
+        f.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(f); ['email','phone','bday','likes','notes'].forEach(k => c[k] = String(d.get(k)||'').trim()); const was = !!c.consent; c.consent = !!d.get('consent'); if (c.consent !== was) c.consentAt = isoDay(new Date()); A.save(); toast('Saved'); A.route(); });
         card.append(h('details',null, h('summary',null,'Edit'), f));
       }
       v.append(card);
@@ -127,10 +128,10 @@
     const nf = h('form',{class:'card grid'}, h('h2',null,'Add a customer'),
       h('label',{class:'f'},'Name', h('input',{type:'text',name:'n',required:true,maxlength:'60'})),
       h('label',{class:'f'},'Email or phone', h('input',{type:'text',name:'contact',maxlength:'80'})),
-      h('label',{class:'checkrow'}, h('input',{type:'checkbox',name:'consent'}), 'They said yes to offers and news'),
+      h('label',{class:'checkrow'}, h('input',{type:'checkbox',name:'consent'}), 'They said yes to offers and news by email'),
       h('button',{class:'btn',type:'submit'},'Add customer'));
     nf.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(nf), ct = String(d.get('contact')||'').trim();
-      list.push({id:uid(), n:String(d.get('n')).trim(), email:/@/.test(ct)?ct:'', phone:/@/.test(ct)?'':ct, bday:'', likes:'', consent:!!d.get('consent'), notes:'', orders:[], since:isoDay(new Date())}); A.save(); toast('Added'); A.route(); });
+      list.push({id:uid(), n:String(d.get('n')).trim(), email:/@/.test(ct)?ct:'', phone:/@/.test(ct)?'':ct, bday:'', likes:'', consent:!!d.get('consent'), consentAt:d.get('consent') ? isoDay(new Date()) : '', notes:'', orders:[], since:isoDay(new Date())}); A.save(); toast('Added'); A.route(); });
     v.append(nf);
     if (canEdit()) v.append(h('button',{class:'btn quiet sm',type:'button',onclick:()=>download('special-orders-'+isoDay(new Date())+'.csv','text/csv',
       toCsv([['Customer','Item','Vendor','Cost','Shipping','Price','Status','Date'], ...list.flatMap(c => c.orders.map(o => [c.n,o.item,o.ven,o.cost.toFixed(2),o.ship.toFixed(2),o.price.toFixed(2),o.status,o.at]))]))},'Download special orders (.csv)'));

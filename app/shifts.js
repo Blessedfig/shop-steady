@@ -14,6 +14,16 @@
   const hrs = m => Math.round(m/6)/10;
   const weekStart = iso => { const d = new Date(iso+'T12:00:00'); return addDays(iso, -d.getDay()); }; // workweek Sunday to Saturday
   const OT_WEEK = 40; // federal FLSA and Wisconsin: 1.5x pay after 40 hours in a workweek
+  // A punch is stored as a UTC time. Its day (and so its workweek) is the store's local day, not the UTC day,
+  // or an evening clock-in after 6 PM in Wisconsin would land in the next day or the next week's overtime.
+  const dayOf = iso => isoDay(new Date(iso));
+  // Unpaid break minutes on a punch. Wisconsin (DWD 274.02): a break under 30 minutes is paid time, and an
+  // unpaid meal break must really be taken, so each break is timed and only a break of 30 minutes or more comes off.
+  // Older punches kept one total in brk (deducted only when 30 or more).
+  const brkMin = (b, p) => { const e = Math.min(+new Date(b.e), p && p.out ? +new Date(p.out) : Infinity), st = Math.max(+new Date(b.s), p ? +new Date(p.in) : -Infinity);
+    return Math.max(0, Math.round((e - st)/60000)); }; // only the part of a break inside the clocked-in time counts
+  const unpaidMin = p => ((p.brk||0) >= 30 ? p.brk : 0) + (p.breaks||[]).filter(b => b.e).reduce((a,b) => a + (brkMin(b,p) >= 30 ? brkMin(b,p) : 0), 0);
+  const onBreak = p => (p.breaks||[]).find(b => !b.e);
   const MGR = ['manager','owner'];
   const isMgr = () => MGR.includes(S().tier);
 
@@ -134,9 +144,9 @@
   function weekHours(site, wk){ // worked minutes per person for the week starting wk, from time clock punches
     const end = addDays(wk, 7), byWho = {};
     (X().punches[site]||[]).forEach(p => {
-      const d = p.in.slice(0,10); if (d < wk || d >= end) return;
+      const d = dayOf(p.in); if (d < wk || d >= end) return;
       const outAt = p.out ? new Date(p.out) : new Date();
-      const m = Math.max(0, Math.round((outAt - new Date(p.in))/60000) - ((p.brk||0) >= 30 ? p.brk : 0)); // breaks under 30 minutes are paid time (Wisconsin)
+      const m = Math.max(0, Math.round((outAt - new Date(p.in))/60000) - unpaidMin(p)); // breaks under 30 minutes are paid time (Wisconsin)
       byWho[p.who] = (byWho[p.who]||0) + m;
     });
     return byWho;
@@ -332,14 +342,17 @@
       const p = person(who), open = openPunch(who);
       const sch = sched().filter(s => s.date === today() && s.who === who);
       const card = h('div',{class:'card kioskcard'}, h('h2',null,'Hi, '+who.replace(' (sample)','')),
-        h('p',null, open ? 'Clocked in since '+A.fmtTime(open.in)+'.' : 'You are clocked out.'),
+        h('p',null, open ? (onBreak(open) ? 'On break since '+A.fmtTime(onBreak(open).s)+'.' : 'Clocked in since '+A.fmtTime(open.in)+'.') : 'You are clocked out.'),
         h('p',{class:'small muted'},'This week so far: '+hrs(weekHours(S().site, weekStart(today()))[who] || 0)+' h'),
         sch.length ? h('p',{class:'small muted'},'Scheduled today: '+sch.map(s => tShort(s.start)+' to '+tShort(s.end)).join(', ')) : null,
         h('div',{class:'row'},
           open ? h('button',{class:'btn',type:'button',onclick:()=>{ if (A.tillHolds && A.tillHolds(who) && !(p && p.tier === 'owner')) return toast('Count the cash drawer out first, then clock out.');
-            open.out = new Date().toISOString(); A.save(); toast('Clocked out. Thanks!'); S().kioskWho = null; A.save(); A.route(); }},'Clock out')
+            const now = new Date().toISOString(), b = onBreak(open); if (b) b.e = now; open.out = now; A.save(); toast('Clocked out. Thanks!'); S().kioskWho = null; A.save(); A.route(); }},'Clock out')
                : h('button',{class:'btn',type:'button',onclick:()=>{ punches().push({id:uid(), who, in:new Date().toISOString(), out:null, brk:0}); A.save(); toast('Clocked in'); A.route(); }},'Clock in'),
-          open ? h('button',{class:'btn ghost',type:'button',onclick:()=>{ open.brk = (open.brk||0) + 30; A.save(); toast('30-minute unpaid break added'); A.route(); }},'Add 30 min break') : null,
+          open ? (onBreak(open)
+            ? h('button',{class:'btn ghost',type:'button',onclick:()=>{ const b = onBreak(open); b.e = new Date().toISOString(); A.save();
+                toast(brkMin(b) >= 30 ? 'Welcome back. '+brkMin(b)+'-minute unpaid break recorded.' : 'Welcome back. That break was under 30 minutes, so it stays paid.'); A.route(); }},'End break')
+            : h('button',{class:'btn ghost',type:'button',onclick:()=>{ (open.breaks = open.breaks || []).push({s:new Date().toISOString(), e:null}); A.save(); toast('Break started. Tap End break when you are back. 30 minutes or more is unpaid; shorter breaks stay paid.'); A.route(); }},'Start meal break')) : null,
           h('button',{class:'btn quiet',type:'button',onclick:()=>{ S().kioskWho = null; A.save(); A.route(); }},'Done')));
       v.append(card); if (A.tillCard) v.append(A.tillCard(who)); v.append(checklistCard(who));
       if (A.quickLog) v.append(A.quickLog());
@@ -369,9 +382,26 @@
         h('p',null, h('b',null,'Total: '+money(total)), h('span',{class:'small muted'},' Employer payroll taxes add roughly 8 to 10% on top (Social Security, Medicare, unemployment). The hiring planner will break this down.')),
         h('div',{class:'row'}, h('button',{class:'btn ghost sm',type:'button',onclick:()=>download('payroll-'+wk+'.csv','text/csv',
           toCsv([['Week starting','Name','Regular hours','Overtime hours','Rate','Gross pay'], ...rows.map(r => [wk, r.p.n, hrs(r.x.reg), hrs(r.x.ot), rateOf(r.p).toFixed(2), r.x.pay.toFixed(2)])]))},'Download for payroll (.csv)'))));
-      const recent = punches().filter(p => p.in.slice(0,10) >= wk && p.in.slice(0,10) < addDays(wk,7)).sort((a,b) => b.in.localeCompare(a.in));
+      const recent = punches().filter(p => dayOf(p.in) >= wk && dayOf(p.in) < addDays(wk,7)).sort((a,b) => b.in.localeCompare(a.in));
+      const stale = recent.filter(p => !p.out && (Date.now() - new Date(p.in)) > 14*3600000);
+      if (stale.length) v.append(h('div',{class:'msg'}, h('b',null,'Check before payroll: '), stale.map(p => p.who).join(', ')+' still show as clocked in from '+(stale.length > 1 ? 'earlier shifts' : 'an earlier shift')+'. Those hours keep counting until you fix the clock-out time below.'));
+      // Fixing a punch keeps the original times, who changed it, when and why (federal and Wisconsin time records).
+      const local = iso => { if (!iso) return ''; const d = new Date(iso); return isoDay(d)+'T'+pad(d.getHours())+':'+pad(d.getMinutes()); };
+      const fixForm = p => { const f = h('form',{class:'grid g2'},
+          h('label',{class:'f'},'Clocked in', h('input',{type:'datetime-local',name:'in',required:true,value:local(p.in)})),
+          h('label',{class:'f'},'Clocked out', h('input',{type:'datetime-local',name:'out',value:local(p.out)})),
+          h('label',{class:'f'},'Why (kept with the record)', h('input',{type:'text',name:'why',required:true,maxlength:'160',placeholder:'Forgot to clock out; left at 6 PM'})),
+          h('button',{class:'btn sm',type:'submit'},'Save the fix'));
+        f.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(f), ni = new Date(String(d.get('in'))), no = d.get('out') ? new Date(String(d.get('out'))) : null;
+          if (isNaN(ni) || (no && (isNaN(no) || no <= ni))) return toast('The clock-out has to be after the clock-in.');
+          (p.edits = p.edits || []).push({at:new Date().toISOString(), by:(A.me && A.me()) || S().tier, was:{in:p.in, out:p.out}, why:String(d.get('why')).trim()});
+          p.in = ni.toISOString(); p.out = no ? no.toISOString() : null; const b = onBreak(p); if (b && p.out) b.e = p.out; A.save(); toast('Saved. The original times are kept with the fix.'); A.route(); });
+        return h('details',null, h('summary',null,'Fix times'), f); };
+      const brkText = p => { const u = unpaidMin(p), n = (p.breaks||[]).length + (p.brk ? 1 : 0); return n ? ' · '+(u ? u+' min unpaid break' : 'paid break only') : ''; };
       v.append(h('div',{class:'card'}, h('h2',null,'Clock-ins this week'),
-        recent.length ? h('div',{class:'list'}, recent.map(p => h('div',{class:'item'}, h('b',null,p.who), h('span',{class:'small muted'}, A.fmtTime(p.in)+' to '+(p.out ? A.fmtTime(p.out) : 'still clocked in')+(p.brk ? ' · '+p.brk+' min break' : ''))))) : h('p',{class:'muted'},'No one has clocked in this week. Try Store mode.')));
+        h('p',{class:'small muted'},'Keep these for at least 3 years (federal and Wisconsin rules). Fixes keep the original times and the reason.'),
+        recent.length ? h('div',{class:'list'}, recent.map(p => h('div',{class:'item'}, h('b',null,p.who), h('span',{class:'small muted'}, A.fmtTime(p.in)+' to '+(p.out ? A.fmtTime(p.out) : 'still clocked in')+brkText(p)+(p.edits && p.edits.length ? ' · fixed '+p.edits.length+'×: '+p.edits[p.edits.length-1].why : '')),
+          fixForm(p)))) : h('p',{class:'muted'},'No one has clocked in this week. Try Store mode.')));
     });
   }
 
