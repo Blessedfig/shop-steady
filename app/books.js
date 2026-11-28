@@ -251,7 +251,7 @@
       h('label',{class:'f'},'Tax year', h('select',{onchange:e=>{ S().booksYear = +e.target.value; A.save(true); A.route(); }}, years.map(y => h('option',{value:String(y),selected:y===curYear()},String(y))))),
       h('label',{class:'f'},'Location', h('select',{onchange:e=>{ S().booksSite = e.target.value; A.save(true); A.route(); }},
         h('option',{value:'all',selected:siteSel()==='all'},'All locations'), A.D.SITES.map(s => h('option',{value:s.id,selected:siteSel()===s.id}, A.setupOf(s.id).name)))),
-      h('nav',{class:'row small'}, h('a',{href:'#/books'},'Tax year'), h('a',{href:'#/purchases'},'Each purchase'), h('a',{href:'#/equipment'},'Equipment'), h('a',{href:'#/loans'},'Loans and capital'), h('a',{href:'#/taxsum'},'Tax records')));
+      h('nav',{class:'row small'}, h('a',{href:'#/books'},'Tax year'), h('a',{href:'#/purchases'},'Each purchase'), h('a',{href:'#/equipment'},'Equipment'), h('a',{href:'#/loans'},'Loans and capital'), h('a',{href:'#/yearend'},'Year-end plan'), h('a',{href:'#/taxsum'},'Tax records')));
   }
   async function guarded(v, title, lede, body){
     v.append(head('Owner only', title, lede));
@@ -269,6 +269,7 @@
     box.append(card(y+' at a glance',
       h('div',{class:'grid g3'}, stat(money(c.salesTotal), 'Sales (before sales tax)'), stat(money(c.cogs), 'Cost of goods sold'), stat(money(c.deductions), 'Other write-offs'),
         stat(money(c.profit), 'Estimated profit', c.profit >= 0 ? 'good' : 'warnc'), stat(money(c.deductions * c.rate), 'Tax the write-offs save (about)'), stat(money(set), 'Set aside for tax (about)')),
+      h('p',{class:'small'}, h('a',{href:'#/yearend'},'Year-end plan'),': what you will owe at this pace, a monthly savings goal for the IRS, and which moves before Dec 31 really pay off.'),
       h('p',{class:'small muted'},'Tax figures use '+Math.round(c.rate*100)+'% for self-employment, federal and Wisconsin tax together. Ask your accountant for your own rate and change it here:'),
       h('form',{class:'row',onsubmit:async e=>{ e.preventDefault(); const r = +new FormData(e.target).get('r'); if (!(r >= 0 && r <= 60)) return toast('Use a percent between 0 and 60'); await saveY(c, Y => Y.rate = r/100); toast('Saved'); }},
         h('label',{class:'f'},'Combined tax rate (%)', h('input',{type:'number',name:'r',min:'0',max:'60',step:'0.5',value:String(Math.round(c.rate*1000)/10)})), h('button',{class:'btn sm',type:'submit'},'Save')),
@@ -555,5 +556,5 @@
   A.ownerHooks.push(v => { if (!isOwner()) return; const c0 = h('div',{class:'card'}, h('h2',null,'Tax year '+new Date().getFullYear()), h('p',{class:'small muted'},'Adding it up…')); v.append(c0);
     compute(new Date().getFullYear(), 'all').then(c => { c0.lastChild.remove(); c0.append(h('p',null,'Profit so far about '+money(c.profit)+' · write-offs '+money(c.deductions + c.cogs)+' · set aside about '+money(Math.max(0, c.profit) * c.rate)+' for tax. ', h('a',{href:'#/books'},'Open'))); })
       .catch(() => { c0.lastChild.remove(); c0.append(h('p',{class:'small muted'},'Run supabase/books.sql to turn on the tax year. ', h('a',{href:'#/books'},'Open'))); }); });
-  A.books = {loanMath, payCsv, depFor, regular, treat, shopifyMonths, compute, CLASSES, RULES, YEARLY};
+  A.books = {loanMath, payCsv, depFor, regular, treat, shopifyMonths, compute, guarded, card, stat, tbl, usd, DB, isOwner, CLASSES, RULES, YEARLY};
 })();
