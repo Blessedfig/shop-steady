@@ -5,6 +5,10 @@
 name: Make website art
 
 on:
+  # Also runs when the prompts change on any branch, so it works before this file reaches main.
+  # On a push it only makes pictures that don't exist yet.
+  push:
+    paths: ["assets/art/prompts.json"]
   workflow_dispatch:
     inputs:
       images:
@@ -33,7 +37,10 @@ jobs:
           IMAGES: ${{ inputs.images }}
           REDO: ${{ inputs.redo }}
         run: |
-          if [ -z "$OPENAI_API_KEY" ]; then echo "::error::Add the OPENAI_API_KEY repository secret first."; exit 1; fi
+          if [ -z "$OPENAI_API_KEY" ]; then
+            if [ "${{ github.event_name }}" = "push" ]; then echo "No OPENAI_API_KEY secret yet, skipping."; exit 0; fi
+            echo "::error::Add the OPENAI_API_KEY repository secret first."; exit 1
+          fi
           FLAGS=""; [ "$REDO" = "true" ] && FLAGS="--force"
           node tools/make-art.mjs $FLAGS $IMAGES
       - name: Commit them
