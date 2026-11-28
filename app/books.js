@@ -269,7 +269,7 @@
     box.append(card(y+' at a glance',
       h('div',{class:'grid g3'}, stat(money(c.salesTotal), 'Sales (before sales tax)'), stat(money(c.cogs), 'Cost of goods sold'), stat(money(c.deductions), 'Other write-offs'),
         stat(money(c.profit), 'Estimated profit', c.profit >= 0 ? 'good' : 'warnc'), stat(money(c.deductions * c.rate), 'Tax the write-offs save (about)'), stat(money(set), 'Set aside for tax (about)')),
-      h('p',{class:'small muted'},'Tax figures use '+Math.round(c.rate*100)+'% for self-employment, federal and Wisconsin tax together. Ask your accountant for your own rate and change it here:'),
+      h('p',{class:'small muted'},'Tax figures use '+Math.round(c.rate*100)+'% for '+(A.payroll && A.payroll.mode() === 'salary' ? 'federal and Wisconsin income tax on the profit after your salary (you are paid through payroll, so no self-employment tax)' : 'self-employment, federal and Wisconsin tax together')+'. Ask your accountant for your own rate and change it here:'),
       h('form',{class:'row',onsubmit:async e=>{ e.preventDefault(); const r = +new FormData(e.target).get('r'); if (!(r >= 0 && r <= 60)) return toast('Use a percent between 0 and 60'); await saveY(c, Y => Y.rate = r/100); toast('Saved'); }},
         h('label',{class:'f'},'Combined tax rate (%)', h('input',{type:'number',name:'r',min:'0',max:'60',step:'0.5',value:String(Math.round(c.rate*1000)/10)})), h('button',{class:'btn sm',type:'submit'},'Save')),
       c.monthsMissing.length ? h('p',{class:'small'},'⚠ No sales yet for '+c.monthsMissing.map(m => m.n).join(', ')+'. Type or import them under Sales by month.') : null,

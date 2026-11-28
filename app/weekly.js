@@ -41,6 +41,7 @@
     let cost = 0, min = 0; const unknown = [];
     Object.entries(byWho).forEach(([n, m]) => { const p = team.find(x => x.n === n), rate = p && pay[p.id] ? +pay[p.id].rate || 0 : 0;
       min += m; if (!rate && p && p.tier !== 'owner') unknown.push(n); cost += sh.payFor(rate, m).pay * PAYROLL; });
+    if (A.payroll) cost += A.payroll.ownerWeekly() * PAYROLL; // an owner on salary (Payroll > Owner pay), owner's device only
     return {cost, hours:min/60, unknown};
   }
   function other(wk){

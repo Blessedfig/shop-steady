@@ -34,10 +34,13 @@
   // ---------- state ----------
   const P = () => { const s = S(); s.payroll = s.payroll || {}; const p = s.payroll;
     p.settings = p.settings || {provider:'gusto', freq:'biweekly', anchor:'', lag:5, sui:RATES.suiNew};
+    if (!p.settings.ownerMode) p.settings.ownerMode = 'draws'; // 'draws' (sole owner, partner) or 'salary' (S-corp or C-corp owner on payroll)
     p.runs = p.runs || []; p.people = p.people || {}; p.check = p.check || {}; p.est = p.est || []; return p; };
   const site = () => S().site;
   const team = () => ((S().shifts || {}).team || {})[site()] || [];
   const staff = () => team().filter(p => p.tier !== 'owner');
+  const owners = () => team().filter(p => p.tier === 'owner');
+  const salaryMode = () => P().settings.ownerMode === 'salary';
   const rateOf = p => { const e = ((S().pay || {}).people || {})[p.id] || {}; return e.rate != null ? +e.rate : +(p.rate || 0); };
   const payName = p => (P().people[p.id] || {}).name || p.n.replace(/ \(sample\)$/, '');
   const r2 = n => Math.round(n*100)/100;
@@ -94,6 +97,8 @@
       const reg = wks.reduce((a,w) => a + w.reg, 0), ot = wks.reduce((a,w) => a + w.ot, 0), gross = r2(wks.reduce((a,w) => a + w.gross, 0));
       rows.push({id:p.id, n:p.n, name:payName(p), rate, reg, ot, gross, weeks:wks});
     });
+    // An owner on salary is paid like any other worker: a set amount each pay period, not from the time clock.
+    if (salaryMode()) owners().forEach(p => { const g = r2(+P().settings.ownerSalary || 0); if (g > 0) rows.push({id:p.id, n:p.n, name:payName(p), rate:0, reg:0, ot:0, gross:g, weeks:[], salaried:true}); });
     return {weeks, rows, open};
   }
 
@@ -116,11 +121,11 @@
   const wkLabel = wk => wk+' to '+addDays(wk, 6);
   function byWeekCsv(run){ // Gusto reads a workweek column to check overtime per week
     return toCsv([['Employee','Workweek','Regular hours','Overtime hours','Hourly rate','Gross pay'],
-      ...run.rows.flatMap(x => x.weeks.map(w => [x.name, wkLabel(w.wk), hrs(w.reg), hrs(w.ot), x.rate.toFixed(2), w.gross.toFixed(2)]))]);
+      ...run.rows.flatMap(x => x.salaried ? [[x.name, 'Salary '+run.start+' to '+run.end, '', '', '', x.gross.toFixed(2)]] : x.weeks.map(w => [x.name, wkLabel(w.wk), hrs(w.reg), hrs(w.ot), x.rate.toFixed(2), w.gross.toFixed(2)]))]);
   }
   function totalsCsv(run){
     return toCsv([['Employee','Pay period start','Pay period end','Pay date','Regular hours','Overtime hours','Hourly rate','Gross pay'],
-      ...run.rows.map(x => [x.name, run.start, run.end, run.payday, hrs(x.reg), hrs(x.ot), x.rate.toFixed(2), x.gross.toFixed(2)])]);
+      ...run.rows.map(x => [x.name, run.start, run.end, run.payday, x.salaried ? 'salary' : hrs(x.reg), x.salaried ? '' : hrs(x.ot), x.salaried ? '' : x.rate.toFixed(2), x.gross.toFixed(2)])]);
   }
 
   // ---------- screens ----------
@@ -148,7 +153,7 @@
       if (per.end >= today()) v.append(h('div',{class:'card'}, h('p',null,'This pay period is not over yet. These are the hours so far.')));
       if (f.open.length) v.append(h('div',{class:'card'}, h('h2',null,'Fix these first'),
         h('p',null,'Still clocked in, so their hours are not counted: '+f.open.map(p => p.who+' since '+A.fmtTime(p.in)).join('; ')+'. Fix the clock-out on the ', h('a',{href:'#/timesheets'},'Timesheets'),' screen.')));
-      const low = f.rows.filter(x => x.rate < RATES.minWage);
+      const low = f.rows.filter(x => !x.salaried && x.rate < RATES.minWage);
       if (low.length) v.append(h('div',{class:'card'}, h('p',null, h('b',null,'Below minimum wage: '), low.map(x => x.n+' at '+money(x.rate)+'/h').join(', ')+'. Wisconsin and federal minimum is '+money(RATES.minWage)+' an hour. Change it on the Team screen.')));
       v.append(table(run), costCard(run));
       const go = h('div',{class:'row'},
@@ -160,7 +165,7 @@
 
   function table(run){
     const tb = h('tbody'); run.rows.forEach(x => tb.append(h('tr',null, h('td',null,x.name), h('td',null,hrs(x.reg)+' h'),
-      h('td',null, x.ot ? h('span',{class:'chip amber'}, hrs(x.ot)+' h') : '0'), h('td',null,money(x.rate)), h('td',null,money(x.gross)))));
+      h('td',null, x.ot ? h('span',{class:'chip amber'}, hrs(x.ot)+' h') : '0'), h('td',null, x.salaried ? 'Salary' : money(x.rate)), h('td',null,money(x.gross)))));
     const total = r2(run.rows.reduce((a,x) => a + x.gross, 0));
     return card('Hours and gross pay',
       run.rows.length ? h('div',{class:'tablewrap',tabindex:'0',role:'region','aria-label':'Pay run'},
@@ -304,8 +309,14 @@
     const y = S().payYear || new Date().getFullYear(), ys = String(y), p = P();
     v.append(h('div',{class:'row'}, h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ S().payYear = y-1; A.save(); A.route(); }},'‹ '+(y-1)), h('b',null,ys),
       h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ S().payYear = y+1; A.save(); A.route(); }},(y+1)+' ›')));
-    v.append(card('How owners get paid', h('p',null,'As a sole owner or single-member LLC you are not an employee of your store, so you are not on payroll. Move money to yourself as an owner\'s draw. A draw is not a write-off and has no tax taken out; you pay tax on the store\'s profit instead, whether you draw it or leave it in.'),
-      h('p',{class:'small muted'},'If your LLC elected S-corp tax treatment, this is different: you must pay yourself a reasonable salary through payroll (the Pay run tab), and only the rest comes out as distributions.'),
+    const st = p.settings, sal = salaryMode();
+    const pick = (val, t, why) => h('label',{class:'checkrow'}, h('input',{type:'radio',name:'om',value:val,checked:st.ownerMode === val,onchange:()=>{ st.ownerMode = val; A.save(); A.route(); }}), h('span',null, h('b',null,t), h('br'), h('span',{class:'small muted'},why)));
+    const sf = h('form',{class:'row'}, h('label',{class:'f'},'Your salary each pay period, before tax ($)', h('input',{type:'number',name:'s',step:'0.01',min:'0',value:String(st.ownerSalary || '')})), h('button',{class:'btn sm',type:'submit'},'Save salary'));
+    sf.addEventListener('submit', e => { e.preventDefault(); st.ownerSalary = r2(+new FormData(sf).get('s') || 0); A.save(); toast('Saved'); A.route(); });
+    v.append(card('How you get paid',
+      pick('draws','Owner\'s draws (no salary)','Sole owner, single-member LLC or partnership. You are not on payroll. A draw is not a write-off and has no tax taken out; you pay income and self-employment tax on the whole profit through quarterly estimates.'),
+      pick('salary','Salary through payroll','S-corp (or corporation) owner. You are on payroll like your staff, with taxes withheld. Your salary is a wage expense, so it lowers the profit; what you take beyond it is a distribution, not an expense.'),
+      sal ? h('div',null, sf, h('p',{class:'small muted'},'The IRS expects a reasonable salary for the work you do before any distributions. Each pay run adds you with this amount. '+(st.anchor ? '' : 'Set up pay periods on the Pay run tab first.'))) : null,
       h('details',null, h('summary',null,'Not sure which you are? Ask your accountant'),
         h('ul',{class:'small'}, h('li',null,'Is the store a sole proprietorship, a single-member LLC, or an LLC taxed as an S-corp (Form 2553 filed)? Your last return shows it: Schedule C means sole owner; Form 1120-S means S-corp.'),
           h('li',null,'What should my four estimated payments be this year, federal and Wisconsin?'),
@@ -316,10 +327,10 @@
     const drawn = r2(draws.reduce((a,x) => a + (+x.amt||0), 0));
     const df = h('form',{class:'row'}, h('label',{class:'f'},'Date', h('input',{type:'date',name:'d',value:today(),required:true})),
       h('label',{class:'f'},'Amount ($)', h('input',{type:'number',name:'a',step:'0.01',min:'0.01',required:true})),
-      h('label',{class:'f'},'Note', h('input',{type:'text',name:'n',placeholder:'Transfer to personal checking'})), h('button',{class:'btn sm',type:'submit'},'Add draw'));
+      h('label',{class:'f'},'Note', h('input',{type:'text',name:'n',placeholder:'Transfer to personal checking'})), h('button',{class:'btn sm',type:'submit'},sal ? 'Add distribution' : 'Add draw'));
     df.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(df);
       (S().exp = S().exp || []).push({id:uid(), site:site(), date:String(d.get('d')), cat:DRAW, amt:r2(+d.get('a')), payee:'Owner', note:String(d.get('n')||'Owner draw'), status:'ok'}); A.save(); toast('Draw added'); A.route(); });
-    v.append(card('Draws in '+ys, h('p',null, h('b',null, money(drawn)), ' taken out in '+draws.length+' draw'+(draws.length === 1 ? '' : 's')+'.'),
+    v.append(card((sal ? 'Distributions in ' : 'Draws in ')+ys, h('p',null, h('b',null, money(drawn)), ' taken out in '+draws.length+(sal ? ' distribution' : ' draw')+(draws.length === 1 ? '' : 's')+'.'),
       draws.length ? h('ul',{class:'small'}, draws.slice(0,12).map(x => h('li',null, A.fmtDate(x.date)+': '+money(+x.amt)+(x.note ? ' · '+x.note : '')))) : null, df,
       h('p',{class:'small muted'},'Draws are saved in Expenses under "'+DRAW+'", which the Tax year screen leaves out of write-offs.')));
     // estimated tax
@@ -327,9 +338,11 @@
     const box = card('Quarterly estimated tax', h('p',{class:'small muted'},'Working it out from the Tax year screen…')); v.append(box);
     const fill = c => { box.lastChild.remove();
       const profit = c ? Math.max(0, c.profit) : 0, rate = c ? c.rate : 0.28, setAside = r2(profit * rate);
-      const se = r2(Math.min(profit*0.9235, RATES.ssBase)*0.124 + profit*0.9235*0.029);
+      const se = sal ? 0 : r2(Math.min(profit*0.9235, RATES.ssBase)*0.124 + profit*0.9235*0.029);
+      const salYtd = r2(p.runs.filter(r => r.status === 'paid' && r.site === site() && r.payday.slice(0,4) === ys).reduce((a,r) => a + r.rows.filter(x => x.salaried).reduce((b,x) => b + x.gross, 0), 0));
       const tot = r2(paid('fed') + paid('wi')), owe = r2(Math.max(0, setAside - tot));
-      box.append(h('p',null,'Profit so far '+money(profit)+' · set aside about '+money(setAside)+' at '+Math.round(rate*100)+'% (from Tax year) · of that, self-employment tax about '+money(se)+'.'),
+      box.append(sal ? h('p',null,'Your salary paid so far: '+money(salYtd)+' (tax already withheld through payroll). Profit after salary '+money(profit)+' passes to your personal return with no self-employment tax: set aside about '+money(setAside)+' at '+Math.round(rate*100)+'% (Tax year rate).')
+          : h('p',null,'Profit so far '+money(profit)+' · set aside about '+money(setAside)+' at '+Math.round(rate*100)+'% (from Tax year) · of that, self-employment tax about '+money(se)+'.'),
         h('p',null, h('b',null,'Paid so far: '+money(tot)), ' (federal '+money(paid('fed'))+', Wisconsin '+money(paid('wi'))+') · ', h('b',null,'still to cover about '+money(owe))),
         h('ul',null, dueDates(y).map(([q, d, span]) => { const due = nextBizDay(d), got = est.filter(x => x.q === q);
           return h('li',null, h('b',null, q+' due '+A.fmtDate(due)), ' (profit earned '+span+')'+(got.length ? ': paid '+money(got.reduce((a,x) => a + x.amt, 0)) : due < today() ? ': nothing recorded' : '')); })),
@@ -360,5 +373,7 @@
       : run ? 'Pay run saved: send it to '+providerName()+' for payday '+A.fmtDate(due)+'.' : 'The pay period ended '+A.fmtDate(last.end)+'. Payday is '+A.fmtDate(due)+': save the pay run.';
     v.append(card('Payroll', h('p',null, msg+' ', h('a',{href:'#/payroll'},'Open'))));
   }); });
-  A.payroll = {periodOf, workweeks, figure, employerCost, byWeekCsv, totalsCsv, RATES};
+  const ownerWeekly = () => { if (!S().payroll || !salaryMode()) return 0; const st = P().settings, days = {weekly:7, biweekly:14, semimonthly:365/24, monthly:365/12}[st.freq] || 14;
+    return r2((+st.ownerSalary || 0) * 7 / days * owners().length); };
+  A.payroll = {ownerWeekly, mode:() => (S().payroll && S().payroll.settings && S().payroll.settings.ownerMode) || 'draws', periodOf, workweeks, figure, employerCost, byWeekCsv, totalsCsv, RATES};
 })();
