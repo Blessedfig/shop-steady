@@ -5,6 +5,8 @@
 //            1. Products and stock: a Shopify bulk export of every variant (title, codes, vendor, price, cost,
 //               available, on hand). It runs on Shopify's side; a later run collects it. Repeats hourly.
 //            2. Sales: orders changed since the last run (Shopify allows the last 60 days), line by line.
+//            3. Shopify Capital repayments from Shopify Payments balance transactions (books.sql), when the
+//               payments scopes were granted.
 //   apply  (owner only): sends pending cost and vendor changes from shopify_changes to Shopify, one by one,
 //          and records what happened.
 // The access token lives only in shopify_conn (see supabase/shopify.sql) and in this function's memory.
@@ -159,6 +161,33 @@ Deno.serve(async (req) => {
     } while (after && pages < 40 && Date.now() - t0 < 60000);
     await admin.from("shopify_conn").update({ orders_at: newest }).eq("id", 1);
     notes.push(`${lines} sales lines` + (after ? " (more next run)" : ""));
+
+    // 3. Shopify Capital repayments out of Shopify Payments (needs the payments scopes; reconnect to grant them).
+    //    Stored in shopify_capital_txns; books_capital_from_shopify() adds new ones to the owner's loan records.
+    if (/read_shopify_payments/.test(conn.scope ?? "")) {
+      try {
+        const csince = conn.capital_at ?? "2025-01-01T00:00:00Z";
+        let cafter: string | null = null, cpages = 0, cn = 0, cnewest = csince;
+        do {
+          const d = await gql(`query($q: String, $after: String) { shopifyPaymentsAccount { balanceTransactions(first: 100, after: $after, query: $q, hideTransfers: true, sortKey: PROCESSED_AT) {
+            pageInfo { hasNextPage endCursor } nodes { id type test transactionDate amount { amount } } } } }`, { q: `processed_at:>'${csince}'`, after: cafter });
+          const bt = d.shopifyPaymentsAccount?.balanceTransactions;
+          if (!bt) break;
+          const rows = [];
+          for (const t of bt.nodes) {
+            if (t.transactionDate > cnewest) cnewest = t.transactionDate;
+            if (t.test || !String(t.type).startsWith("LENDING_CAPITAL")) continue;
+            rows.push({ id: num(t.id), at: t.transactionDate, type: t.type, amount: Number(t.amount?.amount ?? 0) });
+          }
+          if (rows.length) { const { error } = await admin.from("shopify_capital_txns").upsert(rows); if (error) throw new Error(error.message); }
+          cn += rows.length; cpages++;
+          cafter = bt.pageInfo.hasNextPage ? bt.pageInfo.endCursor : null;
+        } while (cafter && cpages < 20);
+        await admin.from("shopify_conn").update({ capital_at: cnewest }).eq("id", 1);
+        const { data: added } = await admin.rpc("books_capital_from_shopify");
+        notes.push(`${cn} Capital repayments` + (added ? `, ${added} added to Loans` : ""));
+      } catch (e) { notes.push("Capital: " + (e as Error).message); }
+    }
   } catch (e) { ok = false; notes.push((e as Error).message); }
   await log(action === "tick" ? "auto" : "sync", ok, notes.join(" · "));
   return json({ ok, notes });

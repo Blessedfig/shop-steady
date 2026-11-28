@@ -76,9 +76,10 @@
     const st = modState(m); return st.on && st.tiers.includes(S.tier); };
   const listed = v => viewOn(v) && !VIEWS[v].hidden;
 
-  // The first level (Bookseller) gets a simple app: a few big buttons, no side menu, no level switcher.
-  const SIMPLE = [['checklists','✅','Today\'s checklist'],['till','💵','Cash drawer'],['schedule','📅','My schedule and pay'],
-                  ['teamvoice','💬','Message the owner'],['custvoice','🗣️','A customer asked'],['cashtrain','🎓','Cash training'],['ask','🙋','Ask a question']];
+  // The first level (Front desk) gets a simple app: a few big buttons, no side menu, no level switcher.
+  const SIMPLE = [['checklists','✅','Today\'s checklist'],['till','💵','Cash drawer'],['pickup','🛍️','Customer pickup'],['checkin','📦','Check in a delivery'],
+                  ['out','📝','We\'re out of…'],['custvoice','🗣️','A customer asked'],['teamvoice','💬','Message the owner'],['schedule','📅','My schedule and pay'],
+                  ['ask','🙋','Ask a question'],['training','🎓','Training']];
   const simple = () => S.tier === 'staff';
   function simpleHome(v){
     const name = (window.SSApp.myName || '').split(/[ @]/)[0];

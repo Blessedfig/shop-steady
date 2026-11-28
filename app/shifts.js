@@ -335,6 +335,20 @@
           S().kioskWho = {n:p.n, at:Date.now()}; A.save(); A.route();
         }, 'Enter your PIN')));
         if (A.demo) v.append(h('p',{class:'small muted'},'Sample PINs: 1111 or 2222 staff, 3333 manager, 9999 owner.'));
+        // Ways out: a manager taps in with their PIN. If no manager or owner has a PIN yet, leave right here.
+        // Anyone can sign the device out, which also ends store mode (getting back in needs the email sign-in).
+        const leave = () => { setKiosk(false); S().kioskWho = null; A.save(); location.hash = '#/home'; location.reload(); };
+        const exits = h('div',{class:'row',style:'justify-content:center;margin-top:1rem'});
+        v.append(exits);
+        if (A.sb && !A.demo) exits.append(h('button',{class:'linkbtn small',type:'button',onclick:async ()=>{
+          if (!confirm('Sign this device out and leave store mode? Getting back in needs the email sign-in.')) return;
+          setKiosk(false); try { await A.sb.auth.signOut(); } catch(e){} leave(); }},'Sign out and leave store mode'));
+        if (onServer()) A.sb.rpc('pins_set', {p_site:S().site}).then(r => {
+          const ids = r.error ? null : r.data || [];
+          if (ids && !team().some(p => MGR.includes(p.tier) && ids.includes(p.id)))
+            exits.prepend(h('button',{class:'btn ghost',type:'button',onclick:leave},'Leave store mode (no manager PIN set yet)'));
+        }).catch(() => {});
+        else if (!team().some(p => MGR.includes(p.tier) && p.pinHash)) exits.prepend(h('button',{class:'btn ghost',type:'button',onclick:leave},'Leave store mode (no manager PIN set yet)'));
         return;
       }
       setTimeout(() => { if (/^#\/kiosk/.test(location.hash)) A.route(); }, 121000); // back to the PIN pad

@@ -12,7 +12,9 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const APP_URL = Deno.env.get("APP_URL") ?? "https://blessedfig.github.io/shop-steady/app/";
 const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") ?? "https://blessedfig.github.io";
-const SCOPES = "read_products,write_products,read_inventory,write_inventory,read_orders,read_locations";
+// read_shopify_payments_accounts + _payouts: Shopify Capital repayments for the owner's books (books.sql). Stores that
+// connected before must connect again once to grant them; the sync skips Capital until then.
+const SCOPES = "read_products,write_products,read_inventory,write_inventory,read_orders,read_locations,read_shopify_payments_accounts,read_shopify_payments_payouts";
 const cors = {
   "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
