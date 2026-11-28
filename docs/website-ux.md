@@ -26,7 +26,7 @@ and the Supper Club brand. This file is the audit from November 2026, the rules 
 | Two near-duplicate 3-card sections ("Why it exists" and "Who we are") plus a separate Stube story and bookstore story | Miller | Merged into one benefits row and one "Our story" section |
 | Phone header took 3 rows (168px, sticky), about a fifth of the screen on every scroll | Fitts | Two rows (108px), not sticky on phones |
 | Header menu said "Owner dashboard" and was different on every page ("Sections", "Open the app", "Staff sign-in") | Jakob | One menu on every page; "Sign in" like every other site |
-| No pricing on the page, though visitors expect it in the menu | Jakob | Pricing section: free during testing, then one flat price per store, unlimited staff |
+| No pricing on the page, though visitors expect it in the menu | Jakob | Pricing section: free during testing, then one flat price per store (per location), unlimited staff, optional paid add-ons. Approved by Christian 2026-11-28; no dollar amount yet |
 | Header button was mustard but the hero and closing buttons were pine, so the main action looked different in each place | Von Restorff | One look for the main action site-wide |
 | No pictures at all; the page was text and app mockups | Aesthetic-usability | 8 illustration spots (below) |
 | "Stube" explained only in text | Tesler, Jakob | Picture of the back room next to the explanation |
