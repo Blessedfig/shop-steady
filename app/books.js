@@ -214,7 +214,10 @@
     const wo = (S().writeoffs || []).filter(x => x.date && x.date.startsWith(ys) && counted(x) && inSite(x));
     const woCost = g => wo.filter(x => WO[x.why] === g).reduce((a,x) => a + (x.qty||1) * (+x.cost||0), 0);
     const promo = woCost('promo'), charity = woCost('charity'), loss = woCost('loss');
-    const purchases = rows.filter(r => r.how === 'cogs').reduce((a,r) => a + +r.x.amt, 0) - promo - charity;
+    // Donated stock stays in cost of goods sold (it is simply not on the shelf at year end). For a one-owner LLC that
+    // saves more than moving it to Schedule A: it also lowers self-employment tax, and Schedule A helps only if you
+    // itemize. There is no second deduction for it. Accountant to confirm.
+    const purchases = rows.filter(r => r.how === 'cogs').reduce((a,r) => a + +r.x.amt, 0) - promo;
     const shopCogs = months.reduce((a,m) => a + m.cost, 0), shopCovered = months.reduce((a,m) => a + m.netWithCost, 0), shopSynced = months.reduce((a,m) => a + (m.synced||0), 0);
     let cogs, cogsSrc;
     if (beg && end){ cogs = beg.v + purchases - end.v; cogsSrc = 'books'; }
@@ -319,7 +322,7 @@
       h('p',{class:'small muted'},'Books and other stock you resell are not written off when you buy them. They count when they sell. The tax return figures it as: inventory at the start of the year, plus what you bought, minus what is left at the end.'),
       tbl(['', y, 'Where it comes from'], [
         row('Inventory Jan 1', c.beg && c.beg.v, c.beg ? c.beg.src : 'Not recorded yet. Type last Dec 31\'s value, or it fills itself from now on.'),
-        row('+ Inventory bought', c.purchases, 'Expenses marked Inventory purchases (Receiving adds these)'+(c.promo + c.charity ? ', minus '+money(c.promo + c.charity)+' of stock given away (counted below instead)' : '')),
+        row('+ Inventory bought', c.purchases, 'Expenses marked Inventory purchases (Receiving adds these)'+(c.promo ? ', minus '+money(c.promo)+' of stock given away to promote the store (counted as advertising instead)' : '')),
         row('− Inventory Dec 31', c.end && c.end.v, c.end ? c.end.src : 'Recorded automatically on Dec 31 from Shopify'),
         h('tr',null, h('td',null, h('b',null,'= Cost of goods sold')), h('td',null, h('b',null, money(c.cogs))), h('td',{class:'small muted'},
           c.cogsSrc === 'books' ? (c.end.soFar ? 'So far: the year is not over' : 'Schedule C, Part III, line 42') : c.cogsSrc === 'shopify' ? 'Estimate from Shopify costs of what sold, until both inventory values are in' : 'Only purchases so far: add the inventory values'))]),
@@ -346,7 +349,7 @@
         c.mile ? h('li',null,'Line 9 includes '+c.miles.toFixed(1)+' business miles at '+(yr(c.y).mile*100).toFixed(1)+'¢ (IRS rate for '+c.y+').') : null,
         c.office ? h('li',null,'Line 30: home office, simplified method, '+Math.min(c.sq,300)+' sq ft × $5.') : null,
         c.promo ? h('li',null,'Line 8 includes '+money(c.promo)+' of stock given away to promote the store (at cost).') : null,
-        c.charity ? h('li',null, money(c.charity)+' of stock donated to charities is not here: for a one-owner LLC it goes on your personal return.') : null,
+        c.charity ? h('li',null, money(c.charity)+' of stock donated to charities is counted in cost of goods sold, not as a separate charity gift. For a one-owner LLC that usually saves the most: it lowers self-employment tax too (about 14% more than a personal deduction), and a personal charity deduction only helps if you itemize. You can\'t count it both ways. Keep the charity\'s letter for gifts of $250 or more. Your accountant should confirm.') : null,
         h('li',null,'Your own pay (owner draws) and personal spending never count. If the LLC has more than one owner or is taxed as an S corporation, the lines differ; your accountant maps them.')),
       c.vehicleBoth ? h('p',{class:'small'},'⚠ You have both mileage and actual vehicle costs. For one vehicle you use one or the other, not both.') : null));
   }
@@ -414,7 +417,7 @@
       ['Loans','',c.capitalIn.toFixed(2),'New loans, advances and owner money in this year (not income)'],
       ['Expenses','28',c.deductions.toFixed(2),'Total expenses'],
       ['Profit','31',c.profit.toFixed(2),'Estimate'],
-      ['Personal return','Sch. A',c.charity.toFixed(2)+'', 'Stock donated to charities at cost'],
+      ['Cost of goods sold','in 42',c.charity.toFixed(2), 'Stock donated to charities at cost: kept in cost of goods sold, not deducted again on Schedule A (please confirm)'],
       ['Personal return','Sch. A',c.exp.filter(x => x.cat === 'Donations (charity)').reduce((a,x) => a + +x.amt, 0).toFixed(2),'Cash donations'],
       ['Depreciation','Form 4562',c.depFed.toFixed(2),'Federal (incl. Section 179 '+c.used179.toFixed(2)+')'],
       ['Depreciation','Wisconsin',c.depWi.toFixed(2),'Wisconsin (no bonus depreciation)'],
@@ -433,8 +436,15 @@
       h('div',{class:'row'}, h('button',{class:'btn',type:'button',onclick:summary},'Year summary (.csv)'), h('button',{class:'btn ghost',type:'button',onclick:detail},'Every purchase (.csv)'),
         h('button',{class:'btn ghost',type:'button',onclick:assets},'Equipment and depreciation (.csv)'), h('button',{class:'btn ghost',type:'button',onclick:je},'QuickBooks depreciation entry (.csv)'))));
   }
+  // ---------- hidden effects of a decision, in place (app/ripple.js) ----------
+  function rippleCard(box, title, kind, values){
+    if (!A.ripplePanel) return;
+    const pane = h('div'); box.append(card(title, pane)); A.ripplePanel(pane, kind, values, null, 'Move the sliders');
+  }
   async function yearView(v){ await guarded(v, 'Tax year and write-offs', 'Sales from your POS, cost of goods sold, every write-off on its tax line, and what to set aside. Pick the year above.', (box, c) => {
-    overview(box, c); monthly(box, c); cogsCard(box, c); linesCard(box, c); building(box, c); burn(box, c); limits(box, c); exportsCard(box, c); }); }
+    overview(box, c); monthly(box, c); cogsCard(box, c); linesCard(box, c); building(box, c); burn(box, c); limits(box, c);
+    rippleCard(box, 'Spending before December 31 to save tax?', 'purchase', {price:2000, saves:0});
+    exportsCard(box, c); }); }
 
   // ---------- Each purchase ----------
   async function purchasesView(v){ await guarded(v, 'Each purchase and how it counts', 'Every expense this year: whether it is written off now, half, through cost of goods sold, over several years, or not at all. Change any line that is wrong.', (box, c) => {
@@ -481,6 +491,7 @@
       try { await DB.saveAsset(a); if (from) await saveY(c, Y => { Y.over = Y.over || {}; Y.over[key(from)] = {how:'asset'}; });
         S().booksEdit = null; toast('Saved'); if (from) A.go('equipment'); else A.route(); } catch(err){ toast(err.message || String(err)); } });
     box.append(card(edit ? 'Change '+edit.name : from ? 'Add this purchase to Equipment' : 'Add equipment or building work', f));
+    rippleCard(box, 'What it really costs', 'purchase', {price:+a0.cost || 1200, biz:+a0.business_pct || 100, life:({computer:5, vehicle:5, improvement:15, systems:39, building:39, software:3})[a0.class] || 7});
     const rows = c.dep.map(d => h('tr',null, h('td',null, h('b',null,d.a.name), h('div',{class:'small muted'}, (CLASSES[d.a.class]||{}).l)), h('td',null, A.fmtDate(d.a.in_service)), h('td',null, money(+d.a.cost)+(+d.a.business_pct < 100 ? ' · '+d.a.business_pct+'%' : '')),
       h('td',{class:'small'}, METHODS[d.a.method]), h('td',null, money(d.fed)), h('td',null, money(d.wi)), h('td',{class:'small muted'}, d.note || ''),
       h('td',null, h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ S().booksEdit = d.a.id; A.save(true); A.go('equipment'); }},'Change'),
@@ -528,6 +539,9 @@
       h('button',{class:'btn',type:'submit'},'Add'));
     f.addEventListener('submit', async e => { e.preventDefault(); const d = new FormData(f);
       try { await DB.saveLoan({kind:String(d.get('kind')), lender:String(d.get('lender')).trim(), started:String(d.get('started')), amount:+d.get('amount'), fee:+d.get('fee')||0, rate:+d.get('rate')||0, holdback:d.get('hold') ? +d.get('hold') : null, use_for:String(d.get('use')||'').trim() || null}); toast('Added'); A.route(); } catch(err){ toast(err.message); } });
+    const lastLoan = c.loans.map(x => x.l).filter(l => l.kind !== 'owner').sort((a,b) => String(b.started).localeCompare(String(a.started)))[0];
+    rippleCard(box, lastLoan ? 'What '+lastLoan.lender+' really costs' : 'What a loan really costs', 'loan',
+      lastLoan ? {amount:+lastLoan.amount, fee:+lastLoan.fee || 0, hold:+lastLoan.holdback || 0} : {});
     box.append(card('Add a loan, advance or money you put in', f));
     box.append(card('How it counts', h('ul',{class:'small'},
       h('li',null,'Money you borrow is not income, and paying it back is not a write-off. Only the fee or interest counts, in the year you pay it (Schedule C line 16b).'),

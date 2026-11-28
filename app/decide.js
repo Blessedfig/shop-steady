@@ -19,22 +19,32 @@
 
   // kinds: the fields each one asks for, the questions to think about, and the math
   const KINDS = {
-    hire: {t:'Hire someone', ic:'🧑‍💼', fields:[['hours','Hours per week',20],['rate','Hourly pay ($)',13],['margin','Your gross margin on sales (%)',40],['training','One-time cost to hire and train ($)',300]],
+    hire: {t:'Hire someone', ic:'🧑‍💼', rk:'hire', from:x => ({rate:x.rate, hours:x.hours, train:x.rate ? Math.round((x.training||0)/x.rate) : 16}), fields:[['hours','Hours per week',20],['rate','Hourly pay ($)',13],['margin','Your gross margin on sales (%)',40],['training','One-time cost to hire and train ($)',300]],
       math: x => { const m = x.hours*x.rate*WEEKS*PAYROLL; return {monthly:m, oneTime:x.training, need:m/(x.margin/100)}; },
       ask:['What will this person do that isn\'t getting done now?','Could more hours for someone already here do it?','Which days and times are busiest?','Can sales actually grow by the amount below, or does this free up your own time for something that pays?','Who trains them, and for how long?']},
-    category: {t:'Add a product category', ic:'🧸', fields:[['stock','Opening stock cost ($)',1500],['fixtures','Fixtures and display ($)',200],['sales','Expected sales per month ($)',800],['margin','Gross margin on it (%)',50]],
+    category: {t:'Add a product category', ic:'🧸', rk:'line', from:x => ({stock:x.stock, fixtures:x.fixtures, sales:x.sales, lineMargin:x.margin}), fields:[['stock','Opening stock cost ($)',1500],['fixtures','Fixtures and display ($)',200],['sales','Expected sales per month ($)',800],['margin','Gross margin on it (%)',50]],
       math: x => { const g = x.sales*x.margin/100; return {monthly:-g, oneTime:x.stock+x.fixtures, gain:g}; },
       ask:['Have customers asked for it? (check Customer voice)','Who are the vendors, minimum orders and terms?','What comes off the floor to make room?','How will you know in 3 months if it\'s working? Pick a number.','Can you return or mark down what doesn\'t sell?']},
-    hours: {t:'Change store hours', ic:'🕰️', fields:[['extra','Extra open hours per week',4],['staff','People working those hours',1],['rate','Average hourly pay ($)',13],['perhour','Expected sales per extra hour ($)',60],['margin','Gross margin (%)',40]],
+    hours: {t:'Change store hours', ic:'🕰️', rk:'hours', from:x => ({extra:x.extra, staff:x.staff, rate:x.rate, perhour:x.perhour}), fields:[['extra','Extra open hours per week',4],['staff','People working those hours',1],['rate','Average hourly pay ($)',13],['perhour','Expected sales per extra hour ($)',60],['margin','Gross margin (%)',40]],
       math: x => { const cost = x.extra*x.staff*x.rate*WEEKS*PAYROLL, g = x.extra*x.perhour*WEEKS*x.margin/100; return {monthly:cost - g, oneTime:0, gain:g, cost}; },
       ask:['What do neighbors and the downtown do at those hours?','Is foot traffic there, or would you be open to an empty street?','Try it for a set time (for example 6 weekends) and compare sales.','Who wants the hours on the team?']},
-    purchase: {t:'Big purchase', ic:'🛒', fields:[['cost','Price ($)',1200],['monthly','Monthly running cost ($)',0],['saves','Money saved or earned per month ($)',100],['life','How many years it lasts',5]],
+    purchase: {t:'Big purchase', ic:'🛒', rk:'purchase', from:x => ({price:x.cost, monthly:x.monthly, saves:x.saves, life:x.life}), fields:[['cost','Price ($)',1200],['monthly','Monthly running cost ($)',0],['saves','Money saved or earned per month ($)',100],['life','How many years it lasts',5]],
       math: x => ({monthly:x.monthly - x.saves, oneTime:x.cost, gain:x.saves - x.monthly, perYear:x.cost/Math.max(1, x.life)}),
       ask:['What happens if you don\'t buy it?','Is there a used, rented or cheaper version?','Can it be a business expense for taxes (ask your accountant)?','Who will use it, and do they need training?']},
-    event: {t:'Plan an event', ic:'🎉', fields:[['cost','Cost: author fee, food, ads ($)',250],['people','Expected people',30],['spend','Average spend per person ($)',25],['margin','Gross margin (%)',40]],
+    event: {t:'Plan an event', ic:'🎉', rk:'event', from:x => ({cost:x.cost, people:x.people, spend:x.spend}), fields:[['cost','Cost: author fee, food, ads ($)',250],['people','Expected people',30],['spend','Average spend per person ($)',25],['margin','Gross margin (%)',40]],
       math: x => { const g = x.people*x.spend*x.margin/100; return {monthly:0, oneTime:x.cost, gain:g, net:g - x.cost, breakeven:x.cost/Math.max(0.01, x.spend*x.margin/100)}; },
       ask:['Who is it for, and how will they hear about it?','Can a publisher, author or partner share the cost?','What will people buy there (signed copies, pre-orders)?','Count who came and what sold, so the next one is easier to judge.']},
-    other: {t:'Something else', ic:'🤔', fields:[['oneTime','One-time cost ($)',0],['monthlyCost','Monthly cost ($)',0],['monthlyGain','Monthly gain ($)',0]],
+    raise: {t:'Give a raise', ic:'💵', fields:[], rk:'raise',
+      ask:['What has this person taken on, or what would you lose if they left?','Does it change the gap to anyone paid a little more?','Is it tied to something they can see (a date, a skill, a result)?','Could part of it be a bonus instead, if cash is tight?']},
+    order: {t:'Place a big order', ic:'📦', fields:[], rk:'order',
+      ask:['What sold last time, and how fast? (check Shopify)','Can it come back for credit if it doesn\'t sell?','Can you combine orders to reach free freight instead of rushing?','Where will it go on the floor, and what moves?']},
+    leftover: {t:'Stock that isn\'t selling', ic:'🧺', fields:[], rk:'leftover',
+      ask:['Has it been in a good spot, faced out, and hand-sold?','Can it go back to the supplier for credit?','Is there a school, library or cause that would put it to use?','Would it work as a gift-with-purchase or an event prize?']},
+    price: {t:'Change a price', ic:'🏷️', fields:[], rk:'price',
+      ask:['What do nearby stores and online charge?','Do regulars buy this for the price or for the store?','Try it for a month and compare units sold.']},
+    loan: {t:'Take a loan or advance', ic:'🏦', fields:[], rk:'loan',
+      ask:['What will the money buy, and how does that pay it back?','What happens in a slow month while it takes its share of sales?','Have you compared a bank, SBA or local revolving-loan fund?']},
+    other: {t:'Something else', ic:'🤔', rk:'other', from:x => x, fields:[['oneTime','One-time cost ($)',0],['monthlyCost','Monthly cost ($)',0],['monthlyGain','Monthly gain ($)',0]],
       math: x => ({monthly:x.monthlyCost - x.monthlyGain, oneTime:x.oneTime, gain:x.monthlyGain}),
       ask:['What problem does this solve?','What is the cheapest way to try it first?','What would make you undo it?']}
   };
@@ -71,7 +81,7 @@
     if (!A.demo && A.sync && A.sync.gateOk && !A.sync.gateOk()) v.append(h('div',{class:'msg'},'Decisions are saved on this device only until the owner runs supabase/hr.sql. After that they sync privately to managers and the owner.'));
     v.append(h('div',{class:'grid g3'}, Object.entries(KINDS).map(([k,kd]) => h('button',{class:'tile',type:'button',onclick:()=>{
       const x = {id:uid(), site:S().site, at:isoDay(new Date()), by:A.me(), kind:k, title:kd.t, nums:{}, options:'', pros:'', cons:'', status:'open'};
-      kd.fields.forEach(([f,,d]) => x.nums[f] = d); if (k === 'hire' || k === 'hours'){ const r = avgRate(); if (r) x.nums.rate = r; }
+      (kd.fields || []).forEach(([f,,d]) => x.nums[f] = d); if (k === 'hire' || k === 'hours'){ const r = avgRate(); if (r) x.nums.rate = r; }
       D().unshift(x); A.save(); location.hash = '#/decision/'+x.id; }}, h('span',{class:'ic','aria-hidden':'true'},kd.ic), h('b',null,kd.t)))));
     const all = here();
     const due = all.filter(x => x.status === 'decided' && x.reviewAt && x.reviewAt <= isoDay(new Date()) && !x.outcome);
@@ -90,7 +100,14 @@
     const title = h('input',{type:'text',value:x.title,maxlength:'100','aria-label':'Title',style:'font-size:1.3rem;font-weight:600',onchange:e=>{ x.title = e.target.value.trim() || kd.t; A.save(); }});
     v.append(h('div',{class:'card'}, title, h('p',{class:'small muted'}, kd.t+' · started '+A.fmtDate(x.at)+' by '+x.by)));
 
-    // numbers
+    // numbers: the Ripple sliders with every hidden effect (taxes, write-off, net cost, cash, risk, proof to keep)
+    if (A.ripplePanel && kd.rk){
+      const nc = h('div',{class:'card'}, h('h2',null,'The numbers and what they ripple into')), pane = h('div');
+      nc.append(pane); v.append(nc);
+      if (!x.ripple){ x.ripple = kd.from ? kd.from(x.nums || {}) : {}; Object.keys(x.ripple).forEach(k => { if (x.ripple[k] == null) delete x.ripple[k]; }); }
+      let t = null;
+      A.ripplePanel(pane, kd.rk, x.ripple, vals => { x.ripple = vals; clearTimeout(t); t = setTimeout(() => A.save(), 600); }, 'Move the sliders');
+    } else {
     const res = h('div');
     const draw = () => { res.replaceChildren(h('table',{class:'tbl'}, h('tbody',null, summary(x.kind, x.nums).map(([a,b]) => h('tr',null, h('td',null,a), h('td',null, h('b',null,b))))))); };
     const nc = h('div',{class:'card'}, h('h2',null,'The numbers'),
@@ -98,6 +115,7 @@
       h('p',{class:'small muted'},'Estimates only: payroll taxes and insurance counted as about 11% on top of wages. Your accountant can give exact numbers.'));
     draw(); v.append(nc);
     if (x.kind === 'hire') loadSales().then(() => { if (avgDay) draw(); });
+    }
 
     // think it through
     const tt = (k, label, rows) => h('label',{class:'f'}, label, h('textarea',{rows:String(rows||3),maxlength:'4000',onchange:e=>{ x[k] = e.target.value; A.save(); }}, x[k] || ''));
@@ -123,7 +141,7 @@
     v.append(h('button',{class:'linkbtn small',type:'button',onclick:()=>{ if (!confirm('Delete this decision?')) return; const i = D().indexOf(x); if (i >= 0) D().splice(i,1); A.save(); location.hash = '#/decide'; }},'Delete'));
   }
 
-  A.register({id:'decide', name:'Decision planner', what:'Think through hiring, new categories, hours, big purchases and events with the math done, then look back on whether it worked.', tiers:['manager','owner'],
+  A.register({id:'decide', name:'Decision planner', what:'Think through a raise, a hire, an order, stock that isn\'t selling, prices, hours, a big purchase, a loan or an event, with sliders that show every hidden effect, then look back on whether it worked.', tiers:['manager','owner'],
     views:{decide:{t:'Decisions', ic:'⚖️', render:list, min:'manager'}, decision:{t:'Decision', ic:'⚖️', render:one, min:'manager', hidden:true}}});
   A.ownerHooks.push(v => { const due = here().filter(x => x.status === 'decided' && x.reviewAt && x.reviewAt <= isoDay(new Date()) && !x.outcome);
     if (due.length) v.append(h('div',{class:'card'}, h('h2',null,'Decisions'), h('p',null, due.length+' to look back on. ', h('a',{href:'#/decide'},'Open')))); });
