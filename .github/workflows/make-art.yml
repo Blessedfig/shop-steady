@@ -1,0 +1,54 @@
+# Makes the website illustrations with OpenAI's image model and commits them to the branch you pick.
+# One-time setup: Settings > Secrets and variables > Actions > New repository secret, name OPENAI_API_KEY.
+# Then: Actions > "Make website art" > Run workflow. Leave "images" blank to make every missing one,
+# or list ids from assets/art/prompts.json (for example: hero stube). Tick "redo" to replace existing ones.
+name: Make website art
+
+on:
+  # Also runs when the prompts change on any branch, so it works before this file reaches main.
+  # On a push it only makes pictures that don't exist yet.
+  push:
+    paths: ["assets/art/prompts.json"]
+  workflow_dispatch:
+    inputs:
+      images:
+        description: "Image ids to make (blank = every missing one)"
+        required: false
+        default: ""
+      redo:
+        description: "Redo images that already exist"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  art:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Make the pictures
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          IMAGES: ${{ inputs.images }}
+          REDO: ${{ inputs.redo }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            if [ "${{ github.event_name }}" = "push" ]; then echo "No OPENAI_API_KEY secret yet, skipping."; exit 0; fi
+            echo "::error::Add the OPENAI_API_KEY repository secret first."; exit 1
+          fi
+          FLAGS=""; [ "$REDO" = "true" ] && FLAGS="--force"
+          node tools/make-art.mjs $FLAGS $IMAGES
+      - name: Commit them
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/art *.html
+          git diff --cached --quiet && { echo "Nothing new to commit."; exit 0; }
+          git commit -m "Website art made with the OpenAI image model"
+          git push

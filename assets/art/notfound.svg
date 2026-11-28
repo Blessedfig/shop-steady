@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400" role="img"><title>An empty chair beside a lantern in the back room</title><rect width="600" height="400" fill="#2D6A4F"/>
+<rect x="0" y="280" width="600" height="120" fill="#7A4A2A"/><ellipse cx="300" cy="280" rx="200" ry="40" fill="#F2C14E" opacity=".15"/>
+<rect x="250" y="150" width="20" height="160" fill="#5E3820"/><rect x="250" y="220" width="110" height="18" fill="#A8461A"/><rect x="340" y="236" width="16" height="74" fill="#5E3820"/><rect x="254" y="236" width="16" height="74" fill="#5E3820"/>
+<rect x="390" y="230" width="44" height="60" rx="8" fill="#1B4332"/><rect x="398" y="240" width="28" height="40" rx="4" fill="#F2C14E"/><path d="M412 230v-14" stroke="#1B4332" stroke-width="4"/>
+<path d="M180 300l30-10 6 16-30 10z" fill="#F2C14E"/>
+</svg>
