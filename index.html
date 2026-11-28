@@ -6,9 +6,17 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Downtown Stube: staff, stock and money in one app for your shop</title>
 <meta name="description" content="Downtown Stube is one app for small shops and service businesses: staff checklists and shifts, a shared store tablet with PINs, inventory and reorders, and an owner dashboard with the numbers that matter.">
-<meta property="og:title" content="Downtown Stube">
-<meta property="og:description" content="A point of management for small shops. Your register runs the sale. Stube runs the store: people, stock, costs, cash and decisions.">
-<meta property="og:image" content="https://blessedfig.github.io/shop-steady/app/icons/icon-512.png">
+<link rel="canonical" href="https://blessedfig.github.io/shop-steady/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Downtown Stube">
+<meta property="og:url" content="https://blessedfig.github.io/shop-steady/">
+<meta property="og:title" content="Downtown Stube: staff, stock and money in one app for your shop">
+<meta property="og:description" content="Schedules, time clock, training, restocking and the books for small shops, working next to Shopify POS. One flat price per store.">
+<meta property="og:image" content="https://blessedfig.github.io/shop-steady/assets/brand/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Downtown Stube: staff, stock and money, in one app for your shop">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#1B4332">
 <link rel="icon" type="image/png" href="app/icons/icon-192.png">
 <link rel="apple-touch-icon" href="app/icons/apple-touch-icon.png">
@@ -16,6 +24,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shrikhand&family=Work+Sans:wght@400;500;600;700;800&display=swap">
 <link rel="stylesheet" href="site.css">
+<link rel="preload" as="image" href="assets/art/hero.svg">
 </head>
 <body>
 <a class="skip" href="#main">Skip to main content</a>
@@ -68,6 +77,17 @@
   </div>
 </section>
 
+<section class="proof" aria-label="Why you can trust it">
+  <div class="wrap">
+    <ul>
+      <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V9l8-5 8 5v11"/><path d="M9 20v-6h6v6"/></svg>Used every day in a working bookstore</li>
+      <li><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/></svg>Card payments stay in your POS</li>
+      <li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>Accessibility checked on every change</li>
+      <li><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Invite-only sign-in</li>
+    </ul>
+  </div>
+</section>
+
 <section aria-labelledby="why-h">
   <div class="wrap">
     <div class="head">
@@ -85,40 +105,7 @@
   </div>
 </section>
 
-<section class="tint" id="pom" aria-labelledby="pom-h">
-  <div class="wrap">
-    <div class="head">
-      <span class="eyebrow">Point of sale, meet point of management</span>
-      <h2 id="pom-h">Your register handles about a minute of the day. Stube handles the rest.</h2>
-      <p class="lede">A point-of-sale system is built for checkout. Running a shop is everything before and after it, and that work usually lives in group texts, spreadsheets and the owner's head.</p>
-    </div>
-    <div class="grid g2">
-      <div class="card">
-        <span class="tag sky">Your point of sale</span>
-        <h3>Runs the sale</h3>
-        <ul class="ticks">
-          <li>Rings up items and takes the payment</li>
-          <li>Prints or emails the receipt</li>
-          <li>Records what sold and when</li>
-        </ul>
-        <p class="small">Keep the one you have: Shopify POS, Square, Clover or another.</p>
-      </div>
-      <div class="card">
-        <span class="tag">Downtown Stube</span>
-        <h3>Runs the store</h3>
-        <ul class="ticks">
-          <li><b>People and pay:</b> schedules, the time clock, training, HR files and payroll handoff. <a href="features.html#team">More</a></li>
-          <li><b>Stock:</b> counts, receiving, restocking what sold and special orders. <a href="features.html#inventory">More</a></li>
-          <li><b>Costs:</b> vendor costs, labor and outside bills, for your true margin. <a href="features.html#dashboard">More</a></li>
-          <li><b>Books:</b> expenses, loans, owner pay and the tax year. <a href="features.html#money">More</a></li>
-          <li><b>Answers:</b> a Monday money summary and an assistant that knows your store. <a href="features.html#dashboard">More</a></li>
-        </ul>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section aria-labelledby="roles-h">
+<section class="tint" aria-labelledby="roles-h">
   <div class="wrap">
     <div class="head">
       <span class="eyebrow">One app, the right view for each person</span>
@@ -211,7 +198,7 @@
   </div>
 </section>
 
-<section class="tint" aria-labelledby="kiosk-h">
+<section aria-labelledby="kiosk-h">
   <div class="wrap feature">
     <div class="stack">
       <span class="eyebrow">Store mode</span>
@@ -234,7 +221,7 @@
   </div>
 </section>
 
-<section aria-labelledby="inv-h">
+<section class="tint" aria-labelledby="inv-h">
   <div class="wrap feature flip">
     <div class="stack">
       <span class="eyebrow">Inventory and ordering</span>
@@ -265,7 +252,7 @@
   </div>
 </section>
 
-<section class="tint" id="how" aria-labelledby="how-h">
+<section id="how" aria-labelledby="how-h">
   <div class="wrap">
     <div class="head">
       <span class="eyebrow">How it works</span>
@@ -282,7 +269,7 @@
   </div>
 </section>
 
-<section id="pricing" aria-labelledby="pricing-h">
+<section class="tint" id="pricing" aria-labelledby="pricing-h">
   <div class="wrap">
     <div class="head">
       <span class="eyebrow">Pricing</span>
@@ -307,7 +294,7 @@
   </div>
 </section>
 
-<section class="tint" id="story" aria-labelledby="story-h">
+<section id="story" aria-labelledby="story-h">
   <div class="wrap story">
     <div class="stack">
       <span class="eyebrow">Our story</span>
@@ -325,7 +312,7 @@
   </div>
 </section>
 
-<section aria-labelledby="downtown-h">
+<section class="tint" aria-labelledby="downtown-h">
   <div class="wrap story">
     <figure class="art wide"><img src="assets/art/downtown.svg" alt="" width="1536" height="1024" loading="lazy"></figure>
     <div class="stack">
@@ -338,21 +325,6 @@
         <div class="stat"><b>96%</b><span class="small muted">of independent bookshops studied send customers to their neighbors</span></div>
       </div>
       <p><a href="why-downtown.html">Read why downtown is coming back, with sources</a></p>
-    </div>
-  </div>
-</section>
-
-<section class="tint" aria-labelledby="trust-h">
-  <div class="wrap">
-    <div class="head">
-      <span class="eyebrow">Safe by default</span>
-      <h2 id="trust-h">Your data stays yours</h2>
-    </div>
-    <div class="grid g4">
-      <div class="card"><h3>Invite-only sign-in</h3><p>Only people you add can sign in. Each role only sees what it should.</p></div>
-      <div class="card"><h3>Payments stay in your POS</h3><p>Downtown Stube never handles cards. Your register keeps doing that job.</p></div>
-      <div class="card"><h3>Easy for everyone</h3><p>Checked against WCAG 2.2 AA accessibility on every change, on phones and computers.</p></div>
-      <div class="card"><h3>Works anywhere</h3><p>Phone, tablet or computer. Install it like an app, or just open it in a browser.</p></div>
     </div>
   </div>
 </section>
@@ -384,9 +356,16 @@
 
 <footer>
   <div class="wrap">
-    <a class="brand" href="./"><span class="brand-mark" aria-hidden="true"></span>Downtown Stube</a>
-    <nav aria-label="Footer"><a href="mailto:owner@theblessedfigtree.com?subject=Downtown%20Stube%20early%20access">Contact</a><a href="features.html">Features</a><a href="get-app.html">Get the app</a><a href="app/#/home">Sign in</a><a href="privacy.html">Privacy</a><a href="accessibility.html">Accessibility</a></nav>
-    <p>Downtown Stube is in private testing. Business and legal notes in the app are best readings, not legal, tax or financial advice.</p>
+    <div class="foot-grid">
+      <div class="stack">
+        <a class="brand" href="./"><span class="brand-mark" aria-hidden="true"></span>Downtown Stube</a>
+        <p>Staff, stock and money in one app for small shops. Made in Antigo, Wisconsin.</p>
+      </div>
+      <nav aria-label="Product"><h2>Product</h2><a href="features.html">Features</a><a href="./#pricing">Pricing</a><a href="app/?demo#/home">Live demo</a><a href="get-app.html">Get the app</a></nav>
+      <nav aria-label="Company"><h2>Company</h2><a href="./#story">Our story</a><a href="why-downtown.html">Why downtown</a><a href="mailto:owner@theblessedfigtree.com?subject=Downtown%20Stube">Contact</a></nav>
+      <nav aria-label="Legal"><h2>Help and legal</h2><a href="app/#/home">Sign in</a><a href="privacy.html">Privacy</a><a href="accessibility.html">Accessibility</a></nav>
+    </div>
+    <p class="fine">© 2026 Downtown Stube, in private testing. Business and legal notes in the app are best readings, not legal, tax or financial advice.</p>
   </div>
 </footer>
 </body>
