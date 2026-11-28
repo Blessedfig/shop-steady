@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img"><title>Three team members with name badges</title><rect width="200" height="200" fill="#E4EEE7"/>
+<g><circle cx="60" cy="72" r="18" fill="#A8461A"/><path d="M28 160c0-34 14-56 32-56s32 22 32 56z" fill="#1B4332"/><rect x="62" y="120" width="18" height="12" rx="2" fill="#F2C14E"/></g>
+<g><circle cx="140" cy="72" r="18" fill="#7A4A2A"/><path d="M108 160c0-34 14-56 32-56s32 22 32 56z" fill="#2D6A4F"/><rect x="142" y="120" width="18" height="12" rx="2" fill="#F2C14E"/></g>
+<g><circle cx="100" cy="88" r="20" fill="#F2C14E"/><path d="M64 180c0-38 16-62 36-62s36 24 36 62z" fill="#A8461A"/><rect x="104" y="138" width="20" height="13" rx="2" fill="#F2F5F0"/></g>
+</svg>

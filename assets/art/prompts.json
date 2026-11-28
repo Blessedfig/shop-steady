@@ -1,0 +1,62 @@
+{
+  "about": "Image prompts for the Downtown Stube website. tools/make-art.mjs sends each one to OpenAI's image model, saves assets/art/<id>.webp and points the pages at it in place of the placeholder <id>.svg. Edit a prompt and run again with --force <id> to redo one.",
+  "style": "Flat mid-century 'supper club' illustration, like a vintage Wisconsin travel poster or a 1950s matchbook: simple geometric shapes, soft paper grain, gentle shading, warm evening light. Strict limited palette: deep pine green #1B4332, mid pine #2D6A4F, mustard #F2C14E, brandy orange #A8461A, warm brick #9C4A2F, walnut wood #7A4A2A, cream #FBF3E4 and pale sage #F2F5F0. Cozy, calm and hopeful, never busy. Absolutely no words, letters, numbers or signage text anywhere. No logos, brand names or trademarks. No real or recognizable people or places; any people are small, simple and faceless, seen from behind or at a distance, with varied ages and skin tones.",
+  "images": [
+    {
+      "id": "hero",
+      "size": "1536x1024",
+      "where": "Home page, top right, behind the app screen mockup",
+      "why": "Aesthetic-usability effect: a warm first impression, and it shows 'brick-and-mortar' before anyone reads a word. The lower-left third is covered by the app mockup, so keep it simple there.",
+      "prompt": "A two-story red brick corner shop on a small-town Midwest main street at dusk. A striped mustard and brandy awning, a big warm-lit front window showing shelves of books and a little counter, and through a doorway at the back a glimpse of a cozy lamp-lit back room. Deep pine-green evening sky with a low mustard moon and a few stars. Planters on the sidewalk. Keep the lower-left third of the picture calm and plain, with sidewalk and shadow, because an app screen sits on top of it."
+    },
+    {
+      "id": "stube",
+      "size": "1536x1024",
+      "where": "Home page, 'Our story' section",
+      "why": "Jakob's law and Tesler's law: 'Stube' is an unfamiliar word. A picture of the room explains it faster than text.",
+      "prompt": "Inside a cozy German-Wisconsin back room (a Stube) after closing time. Pine-green wood-paneled walls, a lamp hanging low over a long walnut table, two coffee mugs, an open ledger, a tablet lying flat with a blank glowing screen, a shelf with a few books and a small plant, a small window showing a dark evening. Warm pool of mustard lamplight. Empty chairs pulled up, ready for the crew. Calm, welcoming, a little nostalgic."
+    },
+    {
+      "id": "downtown",
+      "size": "1536x1024",
+      "where": "Home page 'Why downtown' teaser and the top of the Why downtown page",
+      "why": "Gives the research a sense of place, and breaks up a text-heavy topic (chunking, Miller's law).",
+      "prompt": "A reviving small-town Midwest main street on a bright late-summer morning, seen down the middle of the street. Two- and three-story brick storefronts in brick red, brandy and pine green, with awnings, flower planters, a few bicycles and blank colorful street banners on lamp posts. A handful of tiny faceless shoppers in the distance. A mustard sun in a pale cream sky. Hopeful and lively, but tidy and uncluttered."
+    },
+    {
+      "id": "step-type",
+      "size": "1024x1024",
+      "where": "Home page, How it works, step 1 'Pick your business type'",
+      "why": "Picture cues make the four steps easier to scan and remember (chunking).",
+      "prompt": "A small still life on a pale sage background: a short row of books on a wooden shelf, a steaming coffee cup, a pair of salon scissors, a ball of yarn and a folded hotel towel, arranged neatly together to show many kinds of small business. Centered, lots of empty space around it, like a friendly spot illustration."
+    },
+    {
+      "id": "step-team",
+      "size": "1024x1024",
+      "where": "Home page, How it works, step 2 'Invite your team'",
+      "why": "Same as step 1.",
+      "prompt": "Three simple faceless shop workers in aprons standing together and waving, each wearing a blank name badge and holding a phone. Different heights, ages and skin tones. Pale sage background, centered, lots of empty space, friendly spot illustration."
+    },
+    {
+      "id": "step-routines",
+      "size": "1024x1024",
+      "where": "Home page, How it works, step 3 'Load your routines'",
+      "why": "Same as step 1.",
+      "prompt": "A wooden clipboard with a checklist of short blank lines, the first two ticked with green check marks and the third waiting, beside a small stack of cardboard boxes and a pencil. Pale sage background, centered, lots of empty space, friendly spot illustration. No readable writing on the list."
+    },
+    {
+      "id": "step-open",
+      "size": "1024x1024",
+      "where": "Home page, How it works, step 4 'Open the doors'",
+      "why": "Same as step 1. Also the 'end' of the setup story (peak-end rule), so make it feel like a small celebration.",
+      "prompt": "A pine-green shop door swinging open in a brick doorway, warm mustard light spilling out onto the sidewalk, a little brass bell over the door, potted plants on both sides, early morning. Pale sage background, centered, lots of empty space, friendly spot illustration. No sign text."
+    },
+    {
+      "id": "notfound",
+      "size": "1536x1024",
+      "where": "Page not found (404)",
+      "why": "Peak-end rule: a dead end is a low moment, so a gentle picture softens it.",
+      "prompt": "A quiet back room at night: one empty wooden chair beside a small table, a glowing mustard lantern on the floor, a single book left open on the seat and a bookmark that has fallen to the floorboards. Pine-green walls, soft shadows. Gentle and a little funny, like someone just stepped out."
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400" role="img"><title>The Stube: a cozy back room with a table, lamp and mugs</title>
+<rect width="600" height="400" fill="#2D6A4F"/><g fill="#24533F"><rect x="0" y="0" width="30" height="270"/><rect x="60" y="0" width="30" height="270"/><rect x="120" y="0" width="30" height="270"/><rect x="180" y="0" width="30" height="270"/><rect x="240" y="0" width="30" height="270"/><rect x="300" y="0" width="30" height="270"/><rect x="360" y="0" width="30" height="270"/><rect x="420" y="0" width="30" height="270"/><rect x="480" y="0" width="30" height="270"/><rect x="540" y="0" width="30" height="270"/></g>
+<rect x="400" y="50" width="130" height="110" rx="6" fill="#1B4332"/><rect x="410" y="60" width="110" height="90" fill="#F2C14E" opacity=".35"/><path d="M465 60v90M410 105h110" stroke="#1B4332" stroke-width="6"/>
+<rect x="60" y="60" width="170" height="16" fill="#7A4A2A"/><g><rect x="70" y="30" width="14" height="30" fill="#A8461A"/><rect x="86" y="36" width="12" height="24" fill="#F2C14E"/><rect x="100" y="28" width="16" height="32" fill="#F2F5F0"/><rect x="118" y="34" width="12" height="26" fill="#A8461A"/><circle cx="190" cy="48" r="12" fill="#F2F5F0"/></g>
+<rect x="0" y="270" width="600" height="130" fill="#7A4A2A"/><rect x="0" y="270" width="600" height="8" fill="#5E3820"/>
+<path d="M300 40v70" stroke="#1B4332" stroke-width="3"/><path d="M262 140l38-30 38 30z" fill="#F2C14E"/><ellipse cx="300" cy="150" rx="90" ry="20" fill="#F2C14E" opacity=".18"/>
+<rect x="120" y="230" width="360" height="22" rx="6" fill="#A8461A"/><rect x="150" y="252" width="16" height="80" fill="#5E3820"/><rect x="434" y="252" width="16" height="80" fill="#5E3820"/>
+<rect x="190" y="208" width="34" height="24" rx="4" fill="#F2F5F0"/><path d="M224 214h8a6 6 0 0 1 0 12h-8" fill="none" stroke="#F2F5F0" stroke-width="4"/>
+<rect x="370" y="208" width="34" height="24" rx="4" fill="#F2C14E"/><path d="M404 214h8a6 6 0 0 1 0 12h-8" fill="none" stroke="#F2C14E" stroke-width="4"/>
+<rect x="258" y="214" width="84" height="16" rx="3" fill="#1B4332"/><rect x="264" y="218" width="72" height="8" fill="#F2F5F0"/>
+<path d="M60 340c0-50 20-80 60-80s60 30 60 80z" fill="#1B4332"/><path d="M420 340c0-50 20-80 60-80s60 30 60 80z" fill="#1B4332"/>
+</svg>
