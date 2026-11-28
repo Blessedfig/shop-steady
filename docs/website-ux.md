@@ -63,3 +63,12 @@ Three ways to make them, easiest first:
 Rules for any picture: no words or numbers in the image, no logos or brands, no real or recognizable people or places.
 The OpenAI key costs money per image (8 high-quality images is a few dollars) and OpenAI may ask the account to verify the organization before its image model works.
 Never commit the key.
+
+## Polish pass, November 28
+
+- Brand mark is the Open Sign app icon (`assets/brand/open-sign.png`) in the header and footer of every page.
+- A proof strip under the hero: used in a working bookstore, card payments stay in your POS, accessibility checked, invite-only sign-in. Only true, checkable claims. No made-up reviews or customer logos (book, chapter 12).
+- Footer in three groups (Product, Company, Help and legal), same on every site.css page.
+- Share card `assets/brand/og.png` (1200×630) with Open Graph and Twitter tags and a canonical link on the home, Features and Why downtown pages.
+- The home page dropped the "point of sale vs point of management" block and the "Your data stays yours" cards. The hero, Why Stube and the proof strip now say the same things in fewer words.
+- App screens on the site stay as drawn HTML examples, not screenshots. They stay sharp at any size, follow light and dark mode, and don't show a real store's data.
