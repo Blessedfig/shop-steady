@@ -34,7 +34,7 @@
   // ---------- state ----------
   const P = () => { const s = S(); s.payroll = s.payroll || {}; const p = s.payroll;
     p.settings = p.settings || {provider:'gusto', freq:'biweekly', anchor:'', lag:5, sui:RATES.suiNew};
-    p.runs = p.runs || []; p.people = p.people || {}; p.check = p.check || {}; return p; };
+    p.runs = p.runs || []; p.people = p.people || {}; p.check = p.check || {}; p.est = p.est || []; return p; };
   const site = () => S().site;
   const team = () => ((S().shifts || {}).team || {})[site()] || [];
   const staff = () => team().filter(p => p.tier !== 'owner');
@@ -125,7 +125,7 @@
 
   // ---------- screens ----------
   const card = (t, ...kids) => h('div',{class:'card'}, h('h2',null,t), ...kids);
-  const tabs = cur => h('div',{class:'row'}, [['payroll','Pay run'],['payrollpaid','Paid'],['payrollsetup','Setup and the law']].map(([id,t]) =>
+  const tabs = cur => h('div',{class:'row'}, [['ownerpay','Owner pay'],['payroll','Pay run'],['payrollpaid','Paid'],['payrollsetup','Setup and the law']].map(([id,t]) =>
     h('a',{class:'btn '+(cur === id ? '' : 'quiet ')+'sm', href:'#/'+id, 'aria-current':cur === id ? 'page' : null}, t)));
   const ownerOnly = v => { if (isOwner()) return false; v.append(card('Owner only', h('p',null,'Only the owner can see payroll.'))); return true; };
   const providerName = () => PROVIDERS[P().settings.provider] || 'your payroll service';
@@ -289,13 +289,72 @@
     });
   }
 
-  A.register({id:'payroll', name:'Payroll', what:'Owner only. Pay runs from the time clock with overtime by workweek, a file for Gusto or QuickBooks Payroll (they withhold and file the taxes), employer cost, paid runs in the books, and the new-hire paperwork and deadlines.', tiers:['owner'],
-    views:{payroll:{t:'Payroll', ic:'💸', render:runView, min:'owner'}, 'payrollpaid':{t:'Paid pay runs', ic:'🗂️', render:historyView, min:'owner', hidden:true},
+
+  // ---------- owner pay: draws and quarterly estimated tax ----------
+  // A sole proprietor or single-member LLC owner can't be on payroll: they take draws (not a write-off) and pay
+  // income tax plus self-employment tax (15.3% of 92.35% of profit; Social Security part stops at the wage base)
+  // through quarterly estimates: federal 1040-ES and Wisconsin 1-ES. An S-corp owner instead needs a reasonable
+  // W-2 salary through payroll (the Pay run tab).
+  const DRAW = 'Owner draw or personal';
+  const dueDates = y => [['Q1', y+'-04-15', 'Jan to Mar'], ['Q2', y+'-06-15', 'Apr and May'], ['Q3', y+'-09-15', 'Jun to Aug'], ['Q4', (y+1)+'-01-15', 'Sep to Dec']];
+  const nextBizDay = iso => { let d = iso; for (;;){ const w = new Date(d+'T12:00:00').getDay(); if (w !== 0 && w !== 6) return d; d = addDays(d, 1); } };
+  function ownerView(v){
+    v.append(head('Owner · '+A.site().name, 'Owner pay', 'What you take out of the store, and the quarterly tax that goes with it.'), tabs('ownerpay'));
+    if (ownerOnly(v)) return;
+    const y = S().payYear || new Date().getFullYear(), ys = String(y), p = P();
+    v.append(h('div',{class:'row'}, h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ S().payYear = y-1; A.save(); A.route(); }},'‹ '+(y-1)), h('b',null,ys),
+      h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ S().payYear = y+1; A.save(); A.route(); }},(y+1)+' ›')));
+    v.append(card('How owners get paid', h('p',null,'As a sole owner or single-member LLC you are not an employee of your store, so you are not on payroll. Move money to yourself as an owner\'s draw. A draw is not a write-off and has no tax taken out; you pay tax on the store\'s profit instead, whether you draw it or leave it in.'),
+      h('p',{class:'small muted'},'If your LLC elected S-corp tax treatment, this is different: you must pay yourself a reasonable salary through payroll (the Pay run tab), and only the rest comes out as distributions.'),
+      h('details',null, h('summary',null,'Not sure which you are? Ask your accountant'),
+        h('ul',{class:'small'}, h('li',null,'Is the store a sole proprietorship, a single-member LLC, or an LLC taxed as an S-corp (Form 2553 filed)? Your last return shows it: Schedule C means sole owner; Form 1120-S means S-corp.'),
+          h('li',null,'What should my four estimated payments be this year, federal and Wisconsin?'),
+          h('li',null,'Does anyone I pay count as an employee (W-2) rather than a contractor (1099)? Employees need payroll; the Pay run tab handles them.'),
+          h('li',null,'Would an S-corp election save me money at my profit level, after the cost of running payroll?')))));
+    // draws
+    const draws = (S().exp || []).filter(x => x.cat === DRAW && x.site === site() && String(x.date||'').startsWith(ys)).sort((a,b) => b.date.localeCompare(a.date));
+    const drawn = r2(draws.reduce((a,x) => a + (+x.amt||0), 0));
+    const df = h('form',{class:'row'}, h('label',{class:'f'},'Date', h('input',{type:'date',name:'d',value:today(),required:true})),
+      h('label',{class:'f'},'Amount ($)', h('input',{type:'number',name:'a',step:'0.01',min:'0.01',required:true})),
+      h('label',{class:'f'},'Note', h('input',{type:'text',name:'n',placeholder:'Transfer to personal checking'})), h('button',{class:'btn sm',type:'submit'},'Add draw'));
+    df.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(df);
+      (S().exp = S().exp || []).push({id:uid(), site:site(), date:String(d.get('d')), cat:DRAW, amt:r2(+d.get('a')), payee:'Owner', note:String(d.get('n')||'Owner draw'), status:'ok'}); A.save(); toast('Draw added'); A.route(); });
+    v.append(card('Draws in '+ys, h('p',null, h('b',null, money(drawn)), ' taken out in '+draws.length+' draw'+(draws.length === 1 ? '' : 's')+'.'),
+      draws.length ? h('ul',{class:'small'}, draws.slice(0,12).map(x => h('li',null, A.fmtDate(x.date)+': '+money(+x.amt)+(x.note ? ' · '+x.note : '')))) : null, df,
+      h('p',{class:'small muted'},'Draws are saved in Expenses under "'+DRAW+'", which the Tax year screen leaves out of write-offs.')));
+    // estimated tax
+    const est = p.est.filter(x => x.y === y), paid = k => r2(est.filter(x => x.to === k).reduce((a,x) => a + x.amt, 0));
+    const box = card('Quarterly estimated tax', h('p',{class:'small muted'},'Working it out from the Tax year screen…')); v.append(box);
+    const fill = c => { box.lastChild.remove();
+      const profit = c ? Math.max(0, c.profit) : 0, rate = c ? c.rate : 0.28, setAside = r2(profit * rate);
+      const se = r2(Math.min(profit*0.9235, RATES.ssBase)*0.124 + profit*0.9235*0.029);
+      const tot = r2(paid('fed') + paid('wi')), owe = r2(Math.max(0, setAside - tot));
+      box.append(h('p',null,'Profit so far '+money(profit)+' · set aside about '+money(setAside)+' at '+Math.round(rate*100)+'% (from Tax year) · of that, self-employment tax about '+money(se)+'.'),
+        h('p',null, h('b',null,'Paid so far: '+money(tot)), ' (federal '+money(paid('fed'))+', Wisconsin '+money(paid('wi'))+') · ', h('b',null,'still to cover about '+money(owe))),
+        h('ul',null, dueDates(y).map(([q, d, span]) => { const due = nextBizDay(d), got = est.filter(x => x.q === q);
+          return h('li',null, h('b',null, q+' due '+A.fmtDate(due)), ' (profit earned '+span+')'+(got.length ? ': paid '+money(got.reduce((a,x) => a + x.amt, 0)) : due < today() ? ': nothing recorded' : '')); })),
+        h('p',{class:'small muted'},'Pay federal at irs.gov/payments (Direct Pay or EFTPS, Form 1040-ES) and Wisconsin at revenue.wi.gov (My Tax Account, Form 1-ES). Federal estimates are needed when you expect to owe $1,000 or more for the year; Wisconsin when $500 or more. To avoid an underpayment penalty, pay at least 90% of this year\'s tax or 100% of last year\'s (110% if your income was over $150,000), in four equal parts. Your accountant can give you the four amounts.'));
+      const ef = h('form',{class:'row'}, h('label',{class:'f'},'Paid on', h('input',{type:'date',name:'d',value:today(),required:true})),
+        h('label',{class:'f'},'To', h('select',{name:'to'}, h('option',{value:'fed'},'IRS (1040-ES)'), h('option',{value:'wi'},'Wisconsin (1-ES)'))),
+        h('label',{class:'f'},'For', h('select',{name:'q'}, dueDates(y).map(([q]) => h('option',{value:q},q)))),
+        h('label',{class:'f'},'Amount ($)', h('input',{type:'number',name:'a',step:'0.01',min:'0.01',required:true})), h('button',{class:'btn sm',type:'submit'},'Record payment'));
+      ef.addEventListener('submit', e => { e.preventDefault(); const d = new FormData(ef);
+        p.est.push({id:uid(), y, q:String(d.get('q')), to:String(d.get('to')), date:String(d.get('d')), amt:r2(+d.get('a'))}); A.save(); toast('Recorded'); A.route(); });
+      box.append(ef); if (est.length) box.append(h('ul',{class:'small'}, est.slice().sort((a,b) => b.date.localeCompare(a.date)).map(x => h('li',null, A.fmtDate(x.date)+' · '+(x.to === 'fed' ? 'IRS' : 'Wisconsin')+' '+x.q+' · '+money(x.amt)+' ',
+        h('button',{class:'btn quiet sm',type:'button',onclick:()=>{ if (!confirm('Remove this payment record?')) return; p.est = p.est.filter(z => z !== x); A.save(); A.route(); }},'Remove')))));
+  };
+    (A.books && A.books.compute ? A.books.compute(y, 'all') : Promise.reject()).then(fill).catch(() => fill(null));
+  }
+
+  A.register({id:'payroll', name:'Payroll and owner pay', what:'Owner only. Owner\'s draws and quarterly estimated tax (1040-ES, Wisconsin 1-ES). Pay runs from the time clock with overtime by workweek, a file for Gusto or QuickBooks Payroll (they withhold and file the taxes), employer cost, paid runs in the books, and the new-hire paperwork and deadlines.', tiers:['owner'],
+    views:{payroll:{t:'Payroll', ic:'💸', render:runView, min:'owner'}, ownerpay:{t:'Owner pay', ic:'🧑‍💼', render:ownerView, min:'owner'}, 'payrollpaid':{t:'Paid pay runs', ic:'🗂️', render:historyView, min:'owner', hidden:true},
       'payrollsetup':{t:'Payroll setup', ic:'🧾', render:setupView, min:'owner', hidden:true}}});
 
   // Home: the next payday and whether the last finished period still needs a pay run
   A.ownerHooks.push(v => { if (!isOwner()) return; ready().then(() => {
-    const st = P().settings; if (!st.anchor){ v.append(card('Payroll', h('p',null,'Set up pay periods to run payroll from the time clock. ', h('a',{href:'#/payroll'},'Open')))); return; }
+    const y = +today().slice(0,4), next = [...dueDates(y-1), ...dueDates(y)].map(([q, d]) => [q, nextBizDay(d)]).find(([, d]) => d >= today());
+    if (next) v.append(card('Owner pay', h('p',null,'Next estimated tax payment ('+next[0]+'): '+A.fmtDate(next[1])+', federal and Wisconsin. ', h('a',{href:'#/ownerpay'},'Open'))));
+    const st = P().settings; if (!st.anchor) return; // payroll for staff only once the owner sets up pay periods
     const last = periodOf(addDays(periodOf(today()).start, -1)), run = P().runs.find(r => r.site === site() && r.start === last.start);
     const due = payday(last), msg = run && run.status === 'paid' ? 'Last payroll is paid. Next payday '+A.fmtDate(payday(periodOf(today())))+'.'
       : run ? 'Pay run saved: send it to '+providerName()+' for payday '+A.fmtDate(due)+'.' : 'The pay period ended '+A.fmtDate(last.end)+'. Payday is '+A.fmtDate(due)+': save the pay run.';
