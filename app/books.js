@@ -553,7 +553,7 @@
       equipment:{t:'Equipment', ic:'🪑', render:v => { equipmentView(v); }, min:'owner', hidden:true},
       loans:{t:'Loans and capital', ic:'🏦', render:v => { loansView(v); }, min:'owner', hidden:true}}});
   A.ownerHooks.push(v => { if (!isOwner()) return; const c0 = h('div',{class:'card'}, h('h2',null,'Tax year '+new Date().getFullYear()), h('p',{class:'small muted'},'Adding it up…')); v.append(c0);
-    compute(new Date().getFullYear(), 'all').then(c => { c0.lastChild.remove(); c0.append(h('p',null,'Profit so far about '+money(c.profit)+' · write-offs '+money(c.deductions + c.cogs)+' · set aside about '+money(Math.max(0, c.profit) * c.rate)+' for tax. ', h('a',{href:'#/books'},'Open'))); })
+    compute(new Date().getFullYear(), 'all').then(c => { c0.lastChild.remove(); c0.append(h('p',null,'Profit so far about '+money(c.profit)+' · write-offs '+money(c.deductions + c.cogs)+' · set aside about '+money(Math.max(0, c.profit) * c.rate)+' for tax (estimate, not tax advice). ', h('a',{href:'#/books'},'Open'))); })
       .catch(() => { c0.lastChild.remove(); c0.append(h('p',{class:'small muted'},'Run supabase/books.sql to turn on the tax year. ', h('a',{href:'#/books'},'Open'))); }); });
   A.books = {loanMath, payCsv, depFor, regular, treat, shopifyMonths, compute, CLASSES, RULES, YEARLY};
 })();
