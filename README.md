@@ -14,6 +14,7 @@ Live test version: https://blessedfig.github.io/shop-steady/app/ (made-up sample
 - **Business types:** each location picks a type (bookstore, retail shop, café, services or rentals) under **Setup**. The type sets the role names and which modules start on. The owner can rename any role.
 - **Inventory and reorders:** stock by ISBN or SKU, low-stock flags, suggested orders grouped by supplier (CSV download), consignment and used copies.
 - **Expenses:** receipt log by category and an owner spending card on Home.
+- **Payroll (owner only):** pay runs from the time clock with overtime per workweek, a file for Gusto or QuickBooks Payroll (they withhold federal and Wisconsin taxes, pay staff and file 941, WT-6, W-2s), the employer's cost, paid runs added to Expenses, and new-hire paperwork and deadlines. Turn on with `supabase/payroll.sql`.
 - Installable on phones (PWA), Android test build, accessibility and security checks on every change.
 
 ## Coming next

@@ -10,14 +10,17 @@
 (function(){
   const A = window.SSApp; if (!A) return;
   const {h, head, toast} = A;
-  const SHARED = ['inv','exp','shifts','voice','people','notes','tax','setup','mods','scans','writeoffs','trips','pay','receiving','costs','till','safe','staffnotes','hr','decisions','requests','training']; // 'catalog' is shared separately by count.js
+  const SHARED = ['inv','exp','shifts','voice','people','notes','tax','setup','mods','scans','writeoffs','trips','pay','receiving','costs','till','safe','staffnotes','hr','decisions','requests','training','payroll']; // 'catalog' is shared separately by count.js
   // Only a store manager or the owner can read or save these (supabase/private-areas.sql): staff phones never get them.
-  const PRIVATE = ['writeoffs','trips','pay','costs','safe','staffnotes','hr','decisions'];
+  const PRIVATE = ['writeoffs','trips','pay','costs','safe','staffnotes','hr','decisions','payroll'];
+  // Only the owner can read or save these (supabase/payroll.sql). Shared only once the database says so.
+  const OWNER_ONLY = ['payroll'];
+  let ownerGateOk = false;
   // Newer private areas are shared only after the database confirms it keeps them private (supabase/hr.sql has run);
   // until then they stay on this device, so a manager's notes can never land somewhere staff could read them.
   const GATED = ['hr','decisions'];
   let gateOk = false;
-  const shareable = k => !GATED.includes(k) || gateOk;
+  const shareable = k => (!GATED.includes(k) || gateOk) && (!OWNER_ONLY.includes(k) || ownerGateOk);
   const RANK = {staff:1, lead:2, manager:3, owner:4};
   const VKEY = 'shop-steady-sync';
   let sb = null, ver = {}, base = {}, busy = false, again = false, timer = null, statusEl = null, lastErr = '';
@@ -94,6 +97,7 @@
         if (S[k] === undefined || same(S[k], base[k])) continue;
         if ((k === 'setup' || k === 'mods') && A.myRole !== 'owner') continue;
         if (PRIVATE.includes(k) && !(A.myRole === 'owner' || A.myRole === 'manager')) continue;
+        if (OWNER_ONLY.includes(k) && A.myRole !== 'owner') continue;
         if (!shareable(k)) continue;
         for (let tries = 0; tries < 4; tries++){
           status('Saving…');
@@ -133,10 +137,12 @@
     if (r.error) toast('Could not check your access level yet. Showing staff screens until it connects.');
     // nothing private stays on a staff phone (only when the database really says staff, not on a network error)
     if (!r.error && !(A.myRole === 'owner' || A.myRole === 'manager')){ const S = A.state(); PRIVATE.forEach(k => { delete S[k]; delete ver[k]; }); A.save(true); }
+    if (!r.error && A.myRole !== 'owner'){ const S = A.state(); OWNER_ONLY.forEach(k => { delete S[k]; delete ver[k]; }); A.save(true); }
     try { const n = await sb.rpc('my_name'); A.myName = n.error ? null : n.data; } catch(e){ A.myName = null; }
     // this person's own pay rate, if a manager linked their sign-in on the Team screen
     try { const p = await sb.rpc('my_pay'); A.myPay = p.error ? null : p.data; } catch(e){ A.myPay = null; }
     try { const g = await sb.rpc('private_doc', {k:'hr'}), g2 = await sb.rpc('private_doc', {k:'decisions'}); gateOk = !g.error && g.data === true && !g2.error && g2.data === true; } catch(e){ gateOk = false; }
+    try { const g = await sb.rpc('owner_doc', {k:'payroll'}); ownerGateOk = !g.error && g.data === true; } catch(e){ ownerGateOk = false; }
     applyRole();
     try { base = await IDB.all(); } catch(e){ base = {}; }
     try { status('Loading…'); await pull(true); await push(); status('Saved'); }
