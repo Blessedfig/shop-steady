@@ -56,10 +56,17 @@
   // ---------- views, modules and role tiers ----------
   // VIEWS: id -> {t:title, ic:icon, mod:module id}. Modules switch on/off per store and per role (owner decides).
   const VIEWS = {home:{t:'Home', ic:'🏠'}}, R = {}, homeHooks = [], ownerHooks = [];
+  // Each Home card remembers which module added it (the one registered just before), so areas.js can show it in that module's area.
+  let lastMod = null;
+  [homeHooks, ownerHooks].forEach(arr => { arr.push = function(...fs){ fs.forEach(f => { if (typeof f === 'function' && !f.mod) f.mod = lastMod; }); return Array.prototype.push.apply(this, fs); }; });
   // A view can also say min:'manager' (that role and up, whatever the module allows) and hidden:true (reached by link only).
-  function register(mod){ // mod: {id, name, what, tiers:[...], views:{id:{t,ic,render,min,hidden}}}
+  // area:'money' (with group:'Books and taxes') puts it in one of the five owner areas; see areas.js.
+  function register(mod){ // mod: {id, name, what, tiers:[...], views:{id:{t,ic,render,min,hidden,area,group}}}
     D.MODULES[mod.id] = D.MODULES[mod.id] || {name:mod.name, what:mod.what, tiers:mod.tiers};
-    for (const v in mod.views){ const x = mod.views[v]; VIEWS[v] = {t:x.t, ic:x.ic, mod:mod.id, min:x.min, hidden:!!x.hidden}; R[v] = x.render; }
+    lastMod = mod.id;
+    for (const v in mod.views){ const x = mod.views[v];
+      if (VIEWS[v] && VIEWS[v].mod && VIEWS[v].mod !== mod.id) console.warn('View "'+v+'" from '+mod.id+' replaces the one from '+VIEWS[v].mod);
+      VIEWS[v] = {t:x.t, ic:x.ic, mod:mod.id, min:x.min, hidden:!!x.hidden, area:x.area, group:x.group}; R[v] = x.render; }
   }
   // A module starts on when the location's business type lists it (or lists no modules at all); the owner can change it.
   const modState = m => ((S.mods[S.site]||{})[m]) || {on:!btype().modules || btype().modules.includes(m), tiers:(D.MODULES[m]||{}).tiers || D.TIERS.map(t=>t.id)};
@@ -81,6 +88,7 @@
   }
   R.home = v => {
     if (simple()) return simpleHome(v);
+    if (window.SSAreas) return window.SSAreas.today(v);
     v.append(head(site().name+' · '+btype().name, 'Good to see you', 'Pick what you need. Owners can turn modules on or off for each role under Modules.'));
     const g = h('div',{class:'grid g3'});
     Object.keys(VIEWS).filter(k => k !== 'home' && listed(k)).forEach(k => g.append(h('a',{class:'tile',href:'#/'+k}, h('span',{class:'ic','aria-hidden':'true'},VIEWS[k].ic), h('b',null,VIEWS[k].t))));
@@ -104,6 +112,7 @@
 
   function renderNav(view){
     const nav = $('nav'); nav.textContent = '';
+    if (window.SSAreas && !simple()) return window.SSAreas.nav(nav, view);
     Object.keys(VIEWS).filter(listed).filter(k => k !== 'modules' || S.tier === 'owner')
       .forEach(k => nav.append(h('a',{href:'#/'+k,'aria-current':k===view?'page':null}, h('span',{class:'ic','aria-hidden':'true'},VIEWS[k].ic), VIEWS[k].t)));
   }
@@ -136,6 +145,7 @@
     document.body.classList.toggle('stafflogin', window.SSApp.myRole === 'staff');
     const view = h('div',{class:'view'});
     if (simple() && current !== 'home') view.append(h('a',{class:'btn ghost sm backhome',href:'#/home'},'← Home'));
+    else if (window.SSAreas) window.SSAreas.crumb(view, current);
     (R[current] || R.home)(view); main.append(view);
     window.scrollTo(0,0);
   }
@@ -186,7 +196,7 @@
   // The person doing something: who tapped in on the store tablet, else the signed-in person's name, else the level.
   const me = () => (S.kioskWho && Date.now() - S.kioskWho.at < 120000 && S.kioskWho.n) || (window.SSApp && window.SSApp.myName) || tier().name;
   window.SSApp = {D, h, me, state:()=>S, save, toast, copy, site, tier, btype, tierName, setupOf, fresh, fmtDate, fmtTime, money, head, download, toIcs, toCsv, gcalUrl, outlookUrl, csvCell,
-    teamsPayload, chatPayload, R, VIEWS, register, viewOn, route:()=>route(), go, isoDay, addDays, uid, renderNav:()=>renderNav(current), fillSwitchers, param:()=>param, homeHooks, ownerHooks};
+    teamsPayload, chatPayload, R, VIEWS, register, viewOn, listed, simple, RANK, route:()=>route(), go, isoDay, addDays, uid, renderNav:()=>renderNav(current), fillSwitchers, param:()=>param, homeHooks, ownerHooks};
 
   // ---------- sign-in: password, emailed code fallback, persistent session, invite only ----------
   function gate(msg, err){ $('app').hidden = true; $('gate').hidden = false; const m = $('gateMsg'); m.textContent = msg||''; m.hidden = !msg; m.className = 'msg'+(err?' err':''); }
