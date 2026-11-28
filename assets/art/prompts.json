@@ -1,5 +1,5 @@
 {
-  "about": "Image prompts for the Downtown Stube website. tools/make-art.mjs sends each one to OpenAI's image model, saves assets/art/<id>.webp and points the pages at it in place of the placeholder <id>.svg. Edit a prompt and run again with --force <id> to redo one.",
+  "about": "Image prompts for the Downtown Stube website. tools/make-art.mjs sends each one to OpenAI's image model, saves assets/art/<id>.webp and points the pages at it in place of the placeholder <id>.svg. Edit a prompt and run again with --force <id> to redo one. Changing this file on any branch starts the 'Make website art' action, which only makes pictures that are missing.",
   "style": "Flat mid-century 'supper club' illustration, like a vintage Wisconsin travel poster or a 1950s matchbook: simple geometric shapes, soft paper grain, gentle shading, warm evening light. Strict limited palette: deep pine green #1B4332, mid pine #2D6A4F, mustard #F2C14E, brandy orange #A8461A, warm brick #9C4A2F, walnut wood #7A4A2A, cream #FBF3E4 and pale sage #F2F5F0. Cozy, calm and hopeful, never busy. Absolutely no words, letters, numbers or signage text anywhere. No logos, brand names or trademarks. No real or recognizable people or places; any people are small, simple and faceless, seen from behind or at a distance, with varied ages and skin tones.",
   "images": [
     {
