@@ -241,3 +241,4 @@ h1{font-family:var(--script);font-weight:400;letter-spacing:0}
 @media (min-width:761px){section[id]{scroll-margin-top:76px}}
 .hero-list{font-size:1.1rem}
 @media (max-width:560px){.pill{border-radius:14px;line-height:1.3}}
+.benefits .num{width:36px;height:36px;border-radius:50%;background:var(--sun);color:#1B4332;display:grid;place-items:center;font:800 1rem/1 var(--display)}
