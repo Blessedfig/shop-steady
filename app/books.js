@@ -214,7 +214,10 @@
     const wo = (S().writeoffs || []).filter(x => x.date && x.date.startsWith(ys) && counted(x) && inSite(x));
     const woCost = g => wo.filter(x => WO[x.why] === g).reduce((a,x) => a + (x.qty||1) * (+x.cost||0), 0);
     const promo = woCost('promo'), charity = woCost('charity'), loss = woCost('loss');
-    const purchases = rows.filter(r => r.how === 'cogs').reduce((a,r) => a + +r.x.amt, 0) - promo - charity;
+    // Donated stock stays in cost of goods sold (it is simply not on the shelf at year end). For a one-owner LLC that
+    // saves more than moving it to Schedule A: it also lowers self-employment tax, and Schedule A helps only if you
+    // itemize. There is no second deduction for it. Accountant to confirm.
+    const purchases = rows.filter(r => r.how === 'cogs').reduce((a,r) => a + +r.x.amt, 0) - promo;
     const shopCogs = months.reduce((a,m) => a + m.cost, 0), shopCovered = months.reduce((a,m) => a + m.netWithCost, 0), shopSynced = months.reduce((a,m) => a + (m.synced||0), 0);
     let cogs, cogsSrc;
     if (beg && end){ cogs = beg.v + purchases - end.v; cogsSrc = 'books'; }
@@ -319,7 +322,7 @@
       h('p',{class:'small muted'},'Books and other stock you resell are not written off when you buy them. They count when they sell. The tax return figures it as: inventory at the start of the year, plus what you bought, minus what is left at the end.'),
       tbl(['', y, 'Where it comes from'], [
         row('Inventory Jan 1', c.beg && c.beg.v, c.beg ? c.beg.src : 'Not recorded yet. Type last Dec 31\'s value, or it fills itself from now on.'),
-        row('+ Inventory bought', c.purchases, 'Expenses marked Inventory purchases (Receiving adds these)'+(c.promo + c.charity ? ', minus '+money(c.promo + c.charity)+' of stock given away (counted below instead)' : '')),
+        row('+ Inventory bought', c.purchases, 'Expenses marked Inventory purchases (Receiving adds these)'+(c.promo ? ', minus '+money(c.promo)+' of stock given away to promote the store (counted as advertising instead)' : '')),
         row('− Inventory Dec 31', c.end && c.end.v, c.end ? c.end.src : 'Recorded automatically on Dec 31 from Shopify'),
         h('tr',null, h('td',null, h('b',null,'= Cost of goods sold')), h('td',null, h('b',null, money(c.cogs))), h('td',{class:'small muted'},
           c.cogsSrc === 'books' ? (c.end.soFar ? 'So far: the year is not over' : 'Schedule C, Part III, line 42') : c.cogsSrc === 'shopify' ? 'Estimate from Shopify costs of what sold, until both inventory values are in' : 'Only purchases so far: add the inventory values'))]),
@@ -346,7 +349,7 @@
         c.mile ? h('li',null,'Line 9 includes '+c.miles.toFixed(1)+' business miles at '+(yr(c.y).mile*100).toFixed(1)+'¢ (IRS rate for '+c.y+').') : null,
         c.office ? h('li',null,'Line 30: home office, simplified method, '+Math.min(c.sq,300)+' sq ft × $5.') : null,
         c.promo ? h('li',null,'Line 8 includes '+money(c.promo)+' of stock given away to promote the store (at cost).') : null,
-        c.charity ? h('li',null, money(c.charity)+' of stock donated to charities is not here: for a one-owner LLC it goes on your personal return.') : null,
+        c.charity ? h('li',null, money(c.charity)+' of stock donated to charities is counted in cost of goods sold, not as a separate charity gift. For a one-owner LLC that usually saves the most: it lowers self-employment tax too (about 14% more than a personal deduction), and a personal charity deduction only helps if you itemize. You can\'t count it both ways. Keep the charity\'s letter for gifts of $250 or more. Your accountant should confirm.') : null,
         h('li',null,'Your own pay (owner draws) and personal spending never count. If the LLC has more than one owner or is taxed as an S corporation, the lines differ; your accountant maps them.')),
       c.vehicleBoth ? h('p',{class:'small'},'⚠ You have both mileage and actual vehicle costs. For one vehicle you use one or the other, not both.') : null));
   }
@@ -414,7 +417,7 @@
       ['Loans','',c.capitalIn.toFixed(2),'New loans, advances and owner money in this year (not income)'],
       ['Expenses','28',c.deductions.toFixed(2),'Total expenses'],
       ['Profit','31',c.profit.toFixed(2),'Estimate'],
-      ['Personal return','Sch. A',c.charity.toFixed(2)+'', 'Stock donated to charities at cost'],
+      ['Cost of goods sold','in 42',c.charity.toFixed(2), 'Stock donated to charities at cost: kept in cost of goods sold, not deducted again on Schedule A (please confirm)'],
       ['Personal return','Sch. A',c.exp.filter(x => x.cat === 'Donations (charity)').reduce((a,x) => a + +x.amt, 0).toFixed(2),'Cash donations'],
       ['Depreciation','Form 4562',c.depFed.toFixed(2),'Federal (incl. Section 179 '+c.used179.toFixed(2)+')'],
       ['Depreciation','Wisconsin',c.depWi.toFixed(2),'Wisconsin (no bonus depreciation)'],
